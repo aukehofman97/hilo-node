@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --hilo-purple: #6b46c1;
+  --hilo-purple-light: #9f7aea;
+  --hilo-purple-dark: #553c9a;
+  --hilo-purple-50: #f5f3ff;
+  --hilo-purple-100: #ede9fe;
+  --hilo-dark: #1a1a2e;
+  --hilo-gray: #e2e8f0;
+}
+
+body {
+  margin: 0;
+  font-family: "Satoshi", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8f8fc;
+  color: var(--hilo-dark);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Epilogue", sans-serif;
+}

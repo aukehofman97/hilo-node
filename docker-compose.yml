@@ -1,0 +1,103 @@
+version: "3.9"
+
+networks:
+  hilo-net:
+    driver: bridge
+
+volumes:
+  graphdb-data:
+
+services:
+  graphdb:
+    image: ontotext/graphdb:10.7.3
+    container_name: hilo-graphdb
+    ports:
+      - "7200:7200"
+    volumes:
+      - graphdb-data:/opt/graphdb/home
+      - ./graphdb/config:/opt/graphdb/home/conf
+    networks:
+      - hilo-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7200/rest/repositories"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  queue:
+    image: rabbitmq:3-management
+    container_name: hilo-queue
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: hilo
+      RABBITMQ_DEFAULT_PASS: hilo
+    networks:
+      - hilo-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  api:
+    build:
+      context: ./api
+    container_name: hilo-api
+    ports:
+      - "8000:8000"
+    environment:
+      HILO_GRAPHDB_URL: http://graphdb:7200
+      HILO_GRAPHDB_REPOSITORY: hilo
+      HILO_RABBITMQ_URL: amqp://hilo:hilo@queue:5672/
+      HILO_NODE_ID: node-a
+    networks:
+      - hilo-net
+    depends_on:
+      graphdb:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: ./queue
+    container_name: hilo-consumer
+    environment:
+      HILO_RABBITMQ_URL: amqp://hilo:hilo@queue:5672/
+      HILO_NODE_ID: node-a
+      HILO_GRAPHDB_URL: http://graphdb:7200
+      HILO_GRAPHDB_REPOSITORY: hilo
+    networks:
+      - hilo-net
+    depends_on:
+      queue:
+        condition: service_healthy
+      graphdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./ui
+    container_name: hilo-ui
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    networks:
+      - hilo-net
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

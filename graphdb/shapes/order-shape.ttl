@@ -1,0 +1,41 @@
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix hilo:  <http://hilo.semantics.io/ontology/> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+
+hilo:OrderShape
+    a sh:NodeShape ;
+    rdfs:label "HILO Order Shape" ;
+    sh:targetClass hilo:Order ;
+
+    sh:property [
+        sh:path     hilo:orderId ;
+        sh:name     "Order ID" ;
+        sh:description "Unique order identifier (string)" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+
+    sh:property [
+        sh:path     hilo:status ;
+        sh:name     "Status" ;
+        sh:description "Order lifecycle status" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:in (
+            "created"
+            "in_transit"
+            "delivered"
+            "cancelled"
+        ) ;
+    ] ;
+
+    sh:property [
+        sh:path     hilo:createdAt ;
+        sh:name     "Created At" ;
+        sh:description "ISO 8601 timestamp when the order was created" ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
