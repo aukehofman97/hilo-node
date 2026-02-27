@@ -2,25 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Brand tokens ──────────────────────────────────────── */
 :root {
-  --hilo-purple: #6b46c1;
-  --hilo-purple-light: #9f7aea;
-  --hilo-purple-dark: #553c9a;
-  --hilo-purple-50: #f5f3ff;
-  --hilo-purple-100: #ede9fe;
-  --hilo-dark: #1a1a2e;
-  --hilo-gray: #e2e8f0;
+  --hilo-purple: #9063cd;
+  --hilo-purple-light: #b594e0;
+  --hilo-purple-dark: #6b3fa6;
+  --hilo-purple-50: #f5f0fa;
+  --hilo-purple-100: #e8ddf3;
+  --hilo-dark: #1d1d1b;
+  --hilo-gray: #c6c6c6;
+
+  /* Semantic surface tokens */
+  --bg: #f7f4fb;
+  --surface: rgba(255, 255, 255, 0.75);
+  --surface-solid: #ffffff;
+  --border: rgba(144, 99, 205, 0.12);
+  --text: #1d1d1b;
+  --text-muted: rgba(29, 29, 27, 0.5);
 }
 
+html.dark {
+  --bg: #111018;
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-solid: #1e1b2e;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #f0edf7;
+  --text-muted: rgba(240, 237, 247, 0.45);
+}
+
+/* ── Base ──────────────────────────────────────────────── */
 body {
   margin: 0;
-  font-family: "Satoshi", sans-serif;
+  font-family: "Satoshi", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f8f8fc;
-  color: var(--hilo-dark);
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 250ms ease, color 250ms ease;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: "Epilogue", sans-serif;
+  font-family: "Epilogue", system-ui, sans-serif;
+}
+
+/* ── Utilities ─────────────────────────────────────────── */
+@layer utilities {
+  /* Mesh gradient backgrounds */
+  .mesh-bg {
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(144, 99, 205, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 110%, rgba(181, 148, 224, 0.10) 0%, transparent 60%);
+  }
+
+  .dark .mesh-bg,
+  html.dark .mesh-bg {
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(144, 99, 205, 0.20) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 110%, rgba(107, 63, 166, 0.15) 0%, transparent 60%);
+  }
+
+  /* Glass card */
+  .glass {
+    background: var(--surface);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+  }
+
+  /* Topbar glass */
+  .glass-bar {
+    background: rgba(247, 244, 251, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(144, 99, 205, 0.10);
+  }
+
+  html.dark .glass-bar {
+    background: rgba(17, 16, 24, 0.80);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
 }
