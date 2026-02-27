@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     node_id: str = "node-a"
     graphdb_url: str = "http://localhost:7200"
     graphdb_repository: str = "hilo"
+    graphdb_backend: str = "graphdb"  # "graphdb" or "fuseki"
 
     model_config = SettingsConfigDict(env_prefix="HILO_")
 

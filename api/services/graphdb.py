@@ -18,20 +18,30 @@ PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
 
 def _sparql_endpoint() -> str:
+    if settings.graphdb_backend == "fuseki":
+        return f"{settings.graphdb_url}/{settings.graphdb_repository}/query"
     return f"{settings.graphdb_url}/repositories/{settings.graphdb_repository}"
 
 
 def _sparql_update_endpoint() -> str:
+    if settings.graphdb_backend == "fuseki":
+        return f"{settings.graphdb_url}/{settings.graphdb_repository}/update"
     return f"{settings.graphdb_url}/repositories/{settings.graphdb_repository}/statements"
+
+
+def _health_url() -> str:
+    if settings.graphdb_backend == "fuseki":
+        return f"{settings.graphdb_url}/$/ping"
+    return f"{settings.graphdb_url}/rest/repositories"
 
 
 def check_health() -> str:
     try:
-        resp = httpx.get(f"{settings.graphdb_url}/rest/repositories", timeout=5)
+        resp = httpx.get(_health_url(), timeout=5)
         resp.raise_for_status()
         return "ok"
     except Exception as exc:
-        raise RuntimeError(f"GraphDB unreachable: {exc}") from exc
+        raise RuntimeError(f"Triple store unreachable: {exc}") from exc
 
 
 def store_event(event: EventCreate) -> EventResponse:
@@ -63,22 +73,51 @@ def store_event(event: EventCreate) -> EventResponse:
     )
 
 
+def _turtle_data_endpoint() -> str:
+    """Direct Turtle upload endpoint (used for Fuseki; falls back to SPARQL UPDATE for GraphDB)."""
+    if settings.graphdb_backend == "fuseki":
+        return f"{settings.graphdb_url}/{settings.graphdb_repository}/data"
+    return None  # GraphDB uses SPARQL UPDATE
+
+
 def insert_turtle(triples: str) -> None:
-    endpoint = _sparql_update_endpoint()
-    insert_query = f"""INSERT DATA {{
-{triples}
-}}"""
-    try:
-        resp = httpx.post(
-            endpoint,
-            data={"update": insert_query},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        logger.error("GraphDB INSERT failed: %s — %s", exc.response.status_code, exc.response.text)
-        raise
+    if settings.graphdb_backend == "fuseki":
+        # Fuseki accepts raw Turtle via POST /dataset/data
+        endpoint = _turtle_data_endpoint()
+        try:
+            resp = httpx.post(
+                endpoint,
+                content=triples.encode(),
+                headers={"Content-Type": "text/turtle"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.error("Fuseki INSERT failed: %s — %s", exc.response.status_code, exc.response.text)
+            raise
+    else:
+        # GraphDB: SPARQL UPDATE with prefixes converted to SPARQL PREFIX syntax
+        endpoint = _sparql_update_endpoint()
+        sparql_prefixes, body_lines = [], []
+        for line in triples.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("@prefix"):
+                # @prefix foo: <...> .  →  PREFIX foo: <...>
+                sparql_prefixes.append("PREFIX" + stripped[7:].rstrip(" ."))
+            else:
+                body_lines.append(line)
+        insert_query = "\n".join(sparql_prefixes) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}}"
+        try:
+            resp = httpx.post(
+                endpoint,
+                data={"update": insert_query},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.error("GraphDB INSERT failed: %s — %s", exc.response.status_code, exc.response.text)
+            raise
 
 
 def query_data(sparql: str) -> dict:

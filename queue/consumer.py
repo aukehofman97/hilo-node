@@ -52,7 +52,35 @@ def ensure_infrastructure(channel: pika.adapters.blocking_connection.BlockingCha
 
 
 def _graphdb_update_endpoint() -> str:
+    if settings.graphdb_backend == "fuseki":
+        return f"{settings.graphdb_url}/{settings.graphdb_repository}/update"
     return f"{settings.graphdb_url}/repositories/{settings.graphdb_repository}/statements"
+
+
+def _insert_triples(triples: str) -> None:
+    if settings.graphdb_backend == "fuseki":
+        endpoint = f"{settings.graphdb_url}/{settings.graphdb_repository}/data"
+        httpx.post(
+            endpoint,
+            content=triples.encode(),
+            headers={"Content-Type": "text/turtle"},
+            timeout=10,
+        ).raise_for_status()
+    else:
+        sparql_prefixes, body_lines = [], []
+        for line in triples.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("@prefix"):
+                sparql_prefixes.append("PREFIX" + stripped[7:].rstrip(" ."))
+            else:
+                body_lines.append(line)
+        insert_query = "\n".join(sparql_prefixes) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}}"
+        httpx.post(
+            _graphdb_update_endpoint(),
+            data={"update": insert_query},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        ).raise_for_status()
 
 
 def process_event(body: bytes) -> bool:
@@ -63,14 +91,7 @@ def process_event(body: bytes) -> bool:
         if not triples:
             logger.warning("Event has no triples, skipping INSERT")
             return True
-        insert_query = f"INSERT DATA {{\n{triples}\n}}"
-        resp = httpx.post(
-            _graphdb_update_endpoint(),
-            data={"update": insert_query},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
-        )
-        resp.raise_for_status()
+        _insert_triples(triples)
         logger.info("Triples stored for event %s", event.get("id"))
         return True
     except Exception as exc:
