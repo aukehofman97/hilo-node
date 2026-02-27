@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     graphdb_url: str = "http://localhost:7200"
     graphdb_repository: str = "hilo"
+    graphdb_backend: str = "graphdb"  # "graphdb" or "fuseki"
     rabbitmq_url: str = "amqp://hilo:hilo@localhost:5672/"
     node_id: str = "node-a"
 

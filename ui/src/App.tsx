@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import Sidebar from "./components/Sidebar";
+import { ThemeProvider } from "./context/ThemeContext";
+import TopBar from "./components/TopBar";
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import DataExplorer from "./pages/DataExplorer";
@@ -20,24 +21,28 @@ function renderPage(page: Page) {
   }
 }
 
-export default function App() {
+function AppShell() {
   const [activePage, setActivePage] = useState<Page>("dashboard");
-  const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar
+    <div className="min-h-screen mesh-bg">
+      <TopBar
         activePage={activePage}
         onNavigate={(page) => setActivePage(page as Page)}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((c) => !c)}
       />
-      <main
-        className="flex-1 min-h-screen transition-all duration-200"
-        style={{ marginLeft: collapsed ? 64 : 240 }}
-      >
-        <div className="p-8">{renderPage(activePage)}</div>
+      <main className="pt-16">
+        <div className="max-w-screen-xl mx-auto px-4 md:px-6 py-8">
+          {renderPage(activePage)}
+        </div>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
   );
 }
