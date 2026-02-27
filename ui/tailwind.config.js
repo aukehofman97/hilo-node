@@ -1,28 +1,47 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./src/**/*.{js,jsx,ts,tsx}"],
+  content: ["./src/**/*.{js,jsx,ts,tsx}", "./index.html"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        "hilo-purple": "#6B46C1",
-        "hilo-purple-light": "#9F7AEA",
-        "hilo-purple-dark": "#553C9A",
-        "hilo-purple-50": "#F5F3FF",
-        "hilo-purple-100": "#EDE9FE",
-        "hilo-dark": "#1A1A2E",
-        "hilo-gray": "#E2E8F0",
+        // Aligned to brand-reference.md
+        "hilo-purple": "#9063CD",
+        "hilo-purple-light": "#B594E0",
+        "hilo-purple-dark": "#6B3FA6",
+        "hilo-purple-50": "#F5F0FA",
+        "hilo-purple-100": "#E8DDF3",
+        "hilo-dark": "#1D1D1B",
+        "hilo-gray": "#C6C6C6",
       },
       fontFamily: {
-        display: ["Epilogue", "sans-serif"],
-        body: ["Satoshi", "sans-serif"],
-        sans: ["Satoshi", "sans-serif"],
+        display: ["Epilogue", "system-ui", "sans-serif"],
+        body: ["Satoshi", "system-ui", "sans-serif"],
+        sans: ["Satoshi", "system-ui", "sans-serif"],
       },
       borderRadius: {
         hilo: "0.75rem",
       },
       boxShadow: {
-        hilo: "0 2px 8px 0 rgba(107, 70, 193, 0.08)",
-        "hilo-lg": "0 8px 24px 0 rgba(107, 70, 193, 0.12)",
+        hilo: "0 4px 24px rgba(144, 99, 205, 0.08)",
+        "hilo-lg": "0 8px 40px rgba(144, 99, 205, 0.12)",
+      },
+      backdropBlur: {
+        glass: "16px",
+      },
+      keyframes: {
+        fadeIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        slideDown: {
+          "0%": { opacity: "0", transform: "translateY(-8px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-in": "fadeIn 200ms ease",
+        "slide-down": "slideDown 200ms ease",
       },
     },
   },
