@@ -38,10 +38,15 @@ module.exports = {
           "0%": { opacity: "0", transform: "translateY(-8px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        slideInTop: {
+          "0%": { opacity: "0", transform: "translateY(-6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "fade-in": "fadeIn 200ms ease",
         "slide-down": "slideDown 200ms ease",
+        "slide-in-top": "slideInTop 200ms ease",
       },
     },
   },

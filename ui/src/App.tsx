@@ -8,31 +8,29 @@ import Queue from "./pages/Queue";
 
 type Page = "dashboard" | "events" | "data-explorer" | "queue";
 
-function renderPage(page: Page) {
-  switch (page) {
-    case "dashboard":
-      return <Dashboard />;
-    case "events":
-      return <Events />;
-    case "data-explorer":
-      return <DataExplorer />;
-    case "queue":
-      return <Queue />;
-  }
-}
-
 function AppShell() {
   const [activePage, setActivePage] = useState<Page>("dashboard");
+  const navigate = (page: string) => setActivePage(page as Page);
+
+  const renderPage = () => {
+    switch (activePage) {
+      case "dashboard":
+        return <Dashboard onNavigate={navigate} />;
+      case "events":
+        return <Events />;
+      case "data-explorer":
+        return <DataExplorer />;
+      case "queue":
+        return <Queue />;
+    }
+  };
 
   return (
     <div className="min-h-screen mesh-bg">
-      <TopBar
-        activePage={activePage}
-        onNavigate={(page) => setActivePage(page as Page)}
-      />
+      <TopBar activePage={activePage} onNavigate={navigate} />
       <main className="pt-16">
         <div className="max-w-screen-xl mx-auto px-4 md:px-6 py-8">
-          {renderPage(activePage)}
+          {renderPage()}
         </div>
       </main>
     </div>
