@@ -74,7 +74,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
                   aria-current={isActive ? "page" : undefined}
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-hilo-purple text-white shadow-sm"
+                      ? "bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light font-semibold"
                       : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple-50 dark:hover:bg-white/8"
                   }`}
                 >
@@ -136,7 +136,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
                   aria-current={isActive ? "page" : undefined}
                   className={`flex items-center gap-3 px-4 py-3 rounded-hilo text-sm font-medium transition-all duration-150 text-left ${
                     isActive
-                      ? "bg-hilo-purple text-white"
+                      ? "bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light font-semibold"
                       : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple-50 dark:hover:bg-white/8"
                   }`}
                 >
