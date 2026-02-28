@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import health, events, data
+from routes import health, events, data, queue_stats
 
 app = FastAPI(
     title="HILO Node API",
@@ -19,3 +19,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(events.router)
 app.include_router(data.router)
+app.include_router(queue_stats.router)
