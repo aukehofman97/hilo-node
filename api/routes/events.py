@@ -22,8 +22,12 @@ def create_event(event: EventCreate):
 
 
 @router.get("", response_model=list[EventResponse])
-def list_events(since: Optional[str] = Query(default=None)):
-    return graphdb.get_events(since=since)
+def list_events(
+    since: Optional[str] = Query(default=None),
+    event_type: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    return graphdb.get_events(since=since, event_type=event_type, limit=limit)
 
 
 @router.get("/{event_id}", response_model=EventResponse)

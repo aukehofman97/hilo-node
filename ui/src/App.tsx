@@ -17,7 +17,7 @@ function AppShell() {
       case "dashboard":
         return <Dashboard onNavigate={navigate} />;
       case "events":
-        return <Events />;
+        return <Events onNavigate={navigate} />;
       case "data-explorer":
         return <DataExplorer />;
       case "queue":
