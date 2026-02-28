@@ -10,6 +10,8 @@ import {
   X,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
+import hiloLogoColored from "../assets/hilo-logo-colored.png";
+import hiloLogoNegative from "../assets/hilo-logo-negative.png";
 
 interface NavItem {
   id: string;
@@ -46,11 +48,18 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
 
           {/* Logo */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
-            <div className="w-8 h-8 rounded-[10px] bg-hilo-purple flex items-center justify-center shadow-sm">
-              <span className="font-display font-black text-white text-sm leading-none">H</span>
-            </div>
-            <span className="font-display font-bold text-[var(--text)] text-[15px] tracking-tight hidden sm:block">
-              HILO Node
+            <img
+              src={hiloLogoColored}
+              alt="HILO"
+              className="h-6 w-auto dark:hidden"
+            />
+            <img
+              src={hiloLogoNegative}
+              alt="HILO"
+              className="h-6 w-auto hidden dark:block"
+            />
+            <span className="font-display font-semibold text-[var(--text-muted)] text-[13px] tracking-widest uppercase hidden sm:block">
+              Node
             </span>
           </div>
 
