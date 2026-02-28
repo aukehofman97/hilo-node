@@ -48,6 +48,14 @@ def store_event(event: EventCreate) -> EventResponse:
     event_id = str(uuid.uuid4())
     created_at = datetime.utcnow()
 
+    triples_escaped = (
+        event.triples
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+
     meta_turtle = f"""
 @prefix hilo: <http://hilo.semantics.io/ontology/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
@@ -56,7 +64,8 @@ def store_event(event: EventCreate) -> EventResponse:
     hilo:eventId "{event_id}" ;
     hilo:sourceNode "{event.source_node}" ;
     hilo:eventType "{event.event_type}" ;
-    hilo:createdAt "{created_at.isoformat()}Z"^^xsd:dateTime .
+    hilo:createdAt "{created_at.isoformat()}Z"^^xsd:dateTime ;
+    hilo:triplesPayload "{triples_escaped}" .
 """
 
     combined_turtle = meta_turtle + "\n" + event.triples
@@ -136,10 +145,17 @@ def query_data(sparql: str) -> dict:
         raise
 
 
-def get_events(since: str | None = None) -> list[EventResponse]:
-    time_filter = ""
+def get_events(
+    since: str | None = None,
+    event_type: str | None = None,
+    limit: int = 50,
+) -> list[EventResponse]:
+    filters = []
     if since:
-        time_filter = f'FILTER(?createdAt >= "{since}"^^xsd:dateTime)'
+        filters.append(f'FILTER(?createdAt >= "{since}"^^xsd:dateTime)')
+    if event_type:
+        filters.append(f'FILTER(?eventType = "{event_type}")')
+    filter_block = "\n    ".join(filters)
 
     sparql = f"""
 {PREFIXES}
@@ -149,10 +165,10 @@ SELECT ?eventId ?sourceNode ?eventType ?createdAt WHERE {{
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
-    {time_filter}
+    {filter_block}
 }}
 ORDER BY DESC(?createdAt)
-LIMIT 100
+LIMIT {limit}
 """
     results = query_data(sparql)
     events = []
@@ -175,11 +191,12 @@ LIMIT 100
 def get_event_by_id(event_id: str) -> EventResponse | None:
     sparql = f"""
 {PREFIXES}
-SELECT ?sourceNode ?eventType ?createdAt WHERE {{
+SELECT ?sourceNode ?eventType ?createdAt ?triplesPayload WHERE {{
     <http://hilo.semantics.io/events/meta/{event_id}> a hilo:Event ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
+    OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:triplesPayload ?triplesPayload . }}
 }}
 """
     results = query_data(sparql)
@@ -191,7 +208,7 @@ SELECT ?sourceNode ?eventType ?createdAt WHERE {{
         id=event_id,
         source_node=b["sourceNode"]["value"],
         event_type=b["eventType"]["value"],
-        triples="",
+        triples=b.get("triplesPayload", {}).get("value", ""),
         created_at=datetime.fromisoformat(b["createdAt"]["value"].replace("Z", "+00:00")),
         links={"self": f"/events/{event_id}"},
     )
