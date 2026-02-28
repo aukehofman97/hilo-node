@@ -31,6 +31,10 @@ html.dark {
 }
 
 /* ── Base ──────────────────────────────────────────────── */
+html {
+  font-size: 125%; /* 16px → 20px root; scales all rem-based sizes ×1.25 */
+}
+
 body {
   margin: 0;
   font-family: "Satoshi", system-ui, sans-serif;
