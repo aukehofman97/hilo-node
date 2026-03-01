@@ -75,7 +75,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? "bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light font-semibold"
-                      : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple-50 dark:hover:bg-white/8"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple/8 dark:hover:bg-white/8"
                   }`}
                 >
                   {item.icon}
@@ -101,7 +101,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
               onClick={toggleTheme}
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              className="w-9 h-9 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple-50 dark:hover:bg-white/8 transition-all duration-200"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple/8 dark:hover:bg-white/8 transition-all duration-200"
             >
               {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
             </button>
@@ -111,7 +111,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
               onClick={() => setMenuOpen((o) => !o)}
               aria-label={menuOpen ? "Close menu" : "Open menu"}
               aria-expanded={menuOpen}
-              className="md:hidden w-9 h-9 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple-50 dark:hover:bg-white/8 transition-all duration-200"
+              className="md:hidden w-9 h-9 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple/8 dark:hover:bg-white/8 transition-all duration-200"
             >
               {menuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
@@ -137,7 +137,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
                   className={`flex items-center gap-3 px-4 py-3 rounded-hilo text-sm font-medium transition-all duration-150 text-left ${
                     isActive
                       ? "bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light font-semibold"
-                      : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple-50 dark:hover:bg-white/8"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-hilo-purple/8 dark:hover:bg-white/8"
                   }`}
                 >
                   {item.icon}
