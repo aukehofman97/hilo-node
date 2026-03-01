@@ -1,5 +1,16 @@
 version: "3.9"
 
+# ─── How to run ───────────────────────────────────────────────────────────────
+#
+#  Node A (default):
+#    docker-compose up --build
+#
+#  Node B (V2 — second node on same machine):
+#    docker-compose -p node-b --env-file .env.node-b up --build
+#
+# See .env.node-a and .env.node-b for all configurable values.
+# ──────────────────────────────────────────────────────────────────────────────
+
 networks:
   hilo-net:
     driver: bridge
@@ -8,11 +19,13 @@ volumes:
   graphdb-data:
 
 services:
+
+  # ── Triple store ─────────────────────────────────────────────────────────────
   graphdb:
     image: ontotext/graphdb:10.7.3
-    container_name: hilo-graphdb
+    container_name: hilo-${NODE_ID:-node-a}-graphdb
     ports:
-      - "7200:7200"
+      - "${GRAPHDB_PORT:-7200}:7200"
     volumes:
       - graphdb-data:/opt/graphdb/home
       - ./graphdb/config:/opt/graphdb/home/conf
@@ -25,12 +38,31 @@ services:
       retries: 10
       start_period: 60s
 
+  # ── Create GraphDB repo on first boot ────────────────────────────────────────
+  graphdb-init:
+    image: curlimages/curl:8.11.0
+    container_name: hilo-${NODE_ID:-node-a}-graphdb-init
+    entrypoint: ["/bin/sh", "/scripts/init-graphdb.sh"]
+    volumes:
+      - ./scripts/init-graphdb.sh:/scripts/init-graphdb.sh:ro
+      - ./graphdb/config:/graphdb-config:ro
+    environment:
+      GRAPHDB_URL: http://graphdb:7200
+      REPO_ID: ${GRAPHDB_REPO:-hilo}
+    networks:
+      - hilo-net
+    depends_on:
+      graphdb:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Message broker ───────────────────────────────────────────────────────────
   queue:
     image: rabbitmq:3-management
-    container_name: hilo-queue
+    container_name: hilo-${NODE_ID:-node-a}-queue
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
     environment:
       RABBITMQ_DEFAULT_USER: hilo
       RABBITMQ_DEFAULT_PASS: hilo
@@ -43,17 +75,18 @@ services:
       retries: 10
       start_period: 30s
 
+  # ── FastAPI ───────────────────────────────────────────────────────────────────
   api:
     build:
       context: ./api
-    container_name: hilo-api
+    container_name: hilo-${NODE_ID:-node-a}-api
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
       HILO_GRAPHDB_URL: http://graphdb:7200
-      HILO_GRAPHDB_REPOSITORY: hilo
+      HILO_GRAPHDB_REPOSITORY: ${GRAPHDB_REPO:-hilo}
       HILO_RABBITMQ_URL: amqp://hilo:hilo@queue:5672/
-      HILO_NODE_ID: node-a
+      HILO_NODE_ID: ${NODE_ID:-node-a}
     networks:
       - hilo-net
     depends_on:
@@ -69,15 +102,16 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ── Queue consumer ────────────────────────────────────────────────────────────
   consumer:
     build:
       context: ./queue
-    container_name: hilo-consumer
+    container_name: hilo-${NODE_ID:-node-a}-consumer
     environment:
       HILO_RABBITMQ_URL: amqp://hilo:hilo@queue:5672/
-      HILO_NODE_ID: node-a
+      HILO_NODE_ID: ${NODE_ID:-node-a}
       HILO_GRAPHDB_URL: http://graphdb:7200
-      HILO_GRAPHDB_REPOSITORY: hilo
+      HILO_GRAPHDB_REPOSITORY: ${GRAPHDB_REPO:-hilo}
     networks:
       - hilo-net
     depends_on:
@@ -87,14 +121,15 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── React UI ──────────────────────────────────────────────────────────────────
   ui:
     build:
       context: ./ui
-    container_name: hilo-ui
+    container_name: hilo-${NODE_ID:-node-a}-ui
     ports:
-      - "3000:3000"
+      - "${UI_PORT:-3000}:3000"
     environment:
-      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_API_URL: http://localhost:${API_PORT:-8000}
     networks:
       - hilo-net
     depends_on:
