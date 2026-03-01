@@ -9,11 +9,12 @@ import {
   AlertCircle,
   ArrowRight,
   ChevronDown,
-  Filter,
+  Search,
   X,
   Zap,
 } from "lucide-react";
 import { fetchEvents, fetchEvent, Event } from "../api/events";
+import FilterChips from "../components/FilterChips";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,12 +96,7 @@ function TurtleView({ raw }: { raw: string }) {
   return (
     <div className="rounded-hilo bg-[var(--surface-alt)] border border-[var(--border)] p-3 font-mono text-xs overflow-auto max-h-56 space-y-0.5">
       {lines.map((line, i) => {
-        // Colorize: URIs in <…> are teal, literals in quotes are amber, prefixes are purple
-        const parts: React.ReactNode[] = [];
-        let rest = line;
-
         const tokenize = (s: string) => {
-          // URI ref: <...>
           const uriRe = /<([^>]+)>/g;
           let last = 0;
           let match;
@@ -120,7 +116,7 @@ function TurtleView({ raw }: { raw: string }) {
 
         return (
           <div key={i} className="text-[var(--text)]">
-            {tokenize(rest)}
+            {tokenize(line)}
           </div>
         );
       })}
@@ -138,16 +134,9 @@ interface DetailPanelProps {
   onNavigate: (page: string) => void;
 }
 
-function DetailPanel({
-  event,
-  detail,
-  loadingDetail,
-  onClose,
-  onNavigate,
-}: DetailPanelProps) {
+function DetailPanel({ event, detail, loadingDetail, onClose, onNavigate }: DetailPanelProps) {
   return (
     <div className="animate-slide-in-right glass rounded-hilo shadow-hilo border border-[var(--border)] flex flex-col h-full overflow-hidden">
-      {/* Header */}
       <div className="flex items-start justify-between p-4 border-b border-[var(--border)]">
         <div>
           <p className="text-xs text-[var(--text-muted)] mb-0.5">Event detail</p>
@@ -164,16 +153,12 @@ function DetailPanel({
         </button>
       </div>
 
-      {/* Metadata */}
       <div className="p-4 border-b border-[var(--border)] space-y-2">
         {[
           { label: "ID", value: event.id.slice(0, 8) + "…" },
           { label: "Source", value: event.source_node },
           { label: "Type", value: event.event_type },
-          {
-            label: "Created",
-            value: new Date(event.created_at).toLocaleString(),
-          },
+          { label: "Created", value: new Date(event.created_at).toLocaleString() },
         ].map(({ label, value }) => (
           <div key={label} className="flex gap-2 text-xs">
             <span className="text-[var(--text-muted)] w-14 flex-shrink-0">{label}</span>
@@ -183,7 +168,6 @@ function DetailPanel({
         <StatusBadge status="published" />
       </div>
 
-      {/* Triples */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-muted)]">
           RDF Payload
@@ -202,7 +186,6 @@ function DetailPanel({
           <TurtleView raw={detail?.triples ?? ""} />
         )}
 
-        {/* Links */}
         {detail?.links && Object.keys(detail.links).length > 1 && (
           <div className="space-y-1 pt-2">
             <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-muted)]">
@@ -230,142 +213,290 @@ function DetailPanel({
   );
 }
 
+// ─── Popover dropdown ─────────────────────────────────────────────────────────
+
+interface PopoverChipProps {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+  formatLabel?: (v: string) => string;
+}
+
+function PopoverChip({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+  formatLabel = (v) => v,
+}: PopoverChipProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  const hasSelected = selected.length > 0;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium transition-all duration-150 ${
+          hasSelected
+            ? "bg-hilo-purple text-white"
+            : "bg-transparent border border-hilo-gray/30 text-hilo-dark/60 dark:text-white/60 hover:border-hilo-purple/50 hover:text-hilo-purple dark:hover:border-hilo-purple-light/50 dark:hover:text-hilo-purple-light"
+        }`}
+      >
+        {hasSelected ? `${label}: ${selected.map(formatLabel).join(", ")}` : label}
+        {hasSelected ? (
+          <span
+            role="button"
+            aria-label={`Clear ${label} filter`}
+            onClick={(e) => { e.stopPropagation(); onClear(); }}
+            className="ml-0.5 hover:opacity-70"
+          >
+            <X size={12} />
+          </span>
+        ) : (
+          <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        )}
+      </button>
+
+      {open && options.length > 0 && (
+        <div className="absolute top-full left-0 mt-1.5 z-50 glass border border-[var(--border)] rounded-hilo shadow-hilo-lg py-1 min-w-[160px] animate-scale-in">
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => { onToggle(opt); }}
+              className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-hilo-purple-50/60 dark:hover:bg-hilo-purple/10 ${
+                selected.includes(opt)
+                  ? "text-hilo-purple-dark dark:text-hilo-purple-light font-medium"
+                  : "text-[var(--text)]"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  className={`h-3.5 w-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                    selected.includes(opt)
+                      ? "bg-hilo-purple border-hilo-purple"
+                      : "border-hilo-gray/50"
+                  }`}
+                >
+                  {selected.includes(opt) && (
+                    <svg viewBox="0 0 10 8" fill="none" className="w-2 h-2">
+                      <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                {formatLabel(opt)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Expandable search ────────────────────────────────────────────────────────
+
+function SearchChip({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function expand() {
+    setExpanded(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  function collapse() {
+    if (!value) setExpanded(false);
+  }
+
+  return expanded ? (
+    <div className="flex items-center gap-1 border-b border-hilo-gray/30 dark:border-white/20 px-1 pb-0.5">
+      <Search size={13} className="text-[var(--text-muted)] flex-shrink-0" />
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={collapse}
+        placeholder="Search…"
+        className="bg-transparent text-sm text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none w-28"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => { onChange(""); setExpanded(false); }}
+          aria-label="Clear search"
+          className="text-[var(--text-muted)] hover:text-[var(--text)]"
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  ) : (
+    <button
+      type="button"
+      onClick={expand}
+      aria-label="Open search"
+      className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-hilo-purple dark:hover:text-hilo-purple-light hover:bg-hilo-purple-50/50 dark:hover:bg-hilo-purple/10 transition-colors"
+    >
+      <Search size={15} />
+    </button>
+  );
+}
+
 // ─── Filter bar ───────────────────────────────────────────────────────────────
+
+const STATUS_OPTIONS = [
+  { label: "All", value: "all" },
+  { label: "Published", value: "published" },
+  { label: "Delivered", value: "delivered" },
+  { label: "Failed", value: "failed" },
+  { label: "Dead-lettered", value: "dead-lettered" },
+];
 
 interface Filters {
   search: string;
-  eventType: string;
-  sourceNode: string;
-  status: string;
+  eventTypes: string[];
+  sourceNodes: string[];
+  statuses: string[];
 }
 
 const EMPTY_FILTERS: Filters = {
   search: "",
-  eventType: "",
-  sourceNode: "",
-  status: "",
+  eventTypes: [],
+  sourceNodes: [],
+  statuses: ["all"],
 };
+
+function hasActiveFilters(f: Filters): boolean {
+  return (
+    f.search !== "" ||
+    f.eventTypes.length > 0 ||
+    f.sourceNodes.length > 0 ||
+    !(f.statuses.length === 1 && f.statuses[0] === "all")
+  );
+}
 
 interface FilterBarProps {
   filters: Filters;
   onChange: (f: Filters) => void;
   eventTypes: string[];
   sourceNodes: string[];
-  mobileOpen: boolean;
-  onToggleMobile: () => void;
 }
 
-function FilterBar({
-  filters,
-  onChange,
-  eventTypes,
-  sourceNodes,
-  mobileOpen,
-  onToggleMobile,
-}: FilterBarProps) {
-  const active = Object.entries(filters).filter(([, v]) => v !== "");
+function FilterBar({ filters, onChange, eventTypes, sourceNodes }: FilterBarProps) {
+  const active = hasActiveFilters(filters);
+
+  // Build the active filter summary chips
+  const summaryChips: { key: string; label: string; clear: () => void }[] = [];
+  if (filters.search) {
+    summaryChips.push({ key: "search", label: `"${filters.search}"`, clear: () => onChange({ ...filters, search: "" }) });
+  }
+  filters.eventTypes.forEach((t) =>
+    summaryChips.push({ key: `type-${t}`, label: toSentenceCase(t), clear: () => onChange({ ...filters, eventTypes: filters.eventTypes.filter((x) => x !== t) }) })
+  );
+  filters.sourceNodes.forEach((n) =>
+    summaryChips.push({ key: `src-${n}`, label: n, clear: () => onChange({ ...filters, sourceNodes: filters.sourceNodes.filter((x) => x !== n) }) })
+  );
+  if (!(filters.statuses.length === 1 && filters.statuses[0] === "all")) {
+    filters.statuses.forEach((s) =>
+      summaryChips.push({ key: `status-${s}`, label: s, clear: () => {
+        const next = filters.statuses.filter((x) => x !== s);
+        onChange({ ...filters, statuses: next.length === 0 ? ["all"] : next });
+      }})
+    );
+  }
 
   return (
     <div className="space-y-2">
-      {/* Mobile toggle */}
-      <button
-        className="md:hidden flex items-center gap-2 px-3 py-2 rounded-full glass border border-[var(--border)] text-sm text-[var(--text-muted)]"
-        onClick={onToggleMobile}
-      >
-        <Filter size={14} />
-        Filters
-        {active.length > 0 && (
-          <span className="ml-1 h-4 w-4 rounded-full bg-hilo-purple text-white text-[10px] flex items-center justify-center font-bold">
-            {active.length}
-          </span>
-        )}
-        <ChevronDown
-          size={12}
-          className={`transition-transform ${mobileOpen ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {/* Filter row */}
-      <div className={`${mobileOpen ? "flex" : "hidden"} md:flex flex-wrap gap-2`}>
-        {/* Search */}
-        <input
-          type="text"
-          placeholder="Search events…"
-          value={filters.search}
-          onChange={(e) => onChange({ ...filters, search: e.target.value })}
-          className="glass border border-[var(--border)] rounded-full px-3 py-1.5 text-sm text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-hilo-purple/50 w-40"
+      {/* Main filter row */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Status chips */}
+        <FilterChips
+          options={STATUS_OPTIONS}
+          selected={filters.statuses}
+          onChange={(statuses) => onChange({ ...filters, statuses })}
+          multiSelect
+          allValue="all"
         />
 
-        {/* Event type */}
-        <select
-          value={filters.eventType}
-          onChange={(e) => onChange({ ...filters, eventType: e.target.value })}
-          className="glass border border-[var(--border)] rounded-full px-3 py-1.5 text-sm text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-hilo-purple/50 bg-transparent"
-        >
-          <option value="">All types</option>
-          {eventTypes.map((t) => (
-            <option key={t} value={t}>
-              {toSentenceCase(t)}
-            </option>
-          ))}
-        </select>
+        <div className="w-px h-5 bg-hilo-gray/20 self-center hidden sm:block" />
 
-        {/* Source node */}
-        <select
-          value={filters.sourceNode}
-          onChange={(e) => onChange({ ...filters, sourceNode: e.target.value })}
-          className="glass border border-[var(--border)] rounded-full px-3 py-1.5 text-sm text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-hilo-purple/50 bg-transparent"
-        >
-          <option value="">All sources</option>
-          {sourceNodes.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
+        {/* Type popover chip */}
+        <PopoverChip
+          label="Type ▾"
+          options={eventTypes}
+          selected={filters.eventTypes}
+          onToggle={(v) => {
+            const next = filters.eventTypes.includes(v)
+              ? filters.eventTypes.filter((x) => x !== v)
+              : [...filters.eventTypes, v];
+            onChange({ ...filters, eventTypes: next });
+          }}
+          onClear={() => onChange({ ...filters, eventTypes: [] })}
+          formatLabel={toSentenceCase}
+        />
 
-        {/* Status */}
-        <select
-          value={filters.status}
-          onChange={(e) => onChange({ ...filters, status: e.target.value })}
-          className="glass border border-[var(--border)] rounded-full px-3 py-1.5 text-sm text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-hilo-purple/50 bg-transparent"
-        >
-          <option value="">All statuses</option>
-          <option value="published">Published</option>
-          <option value="delivered">Delivered</option>
-          <option value="failed">Failed</option>
-          <option value="dead-lettered">Dead-lettered</option>
-        </select>
+        {/* Source popover chip */}
+        <PopoverChip
+          label="Source ▾"
+          options={sourceNodes}
+          selected={filters.sourceNodes}
+          onToggle={(v) => {
+            const next = filters.sourceNodes.includes(v)
+              ? filters.sourceNodes.filter((x) => x !== v)
+              : [...filters.sourceNodes, v];
+            onChange({ ...filters, sourceNodes: next });
+          }}
+          onClear={() => onChange({ ...filters, sourceNodes: [] })}
+        />
 
-        {/* Clear */}
-        {active.length > 0 && (
-          <button
-            onClick={() => onChange(EMPTY_FILTERS)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition-colors animate-scale-in"
-          >
-            <X size={12} /> Clear
-          </button>
-        )}
+        {/* Expandable search */}
+        <SearchChip value={filters.search} onChange={(search) => onChange({ ...filters, search })} />
       </div>
 
-      {/* Active filter pills */}
-      {active.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {active.map(([key, val]) => (
+      {/* Active filter summary */}
+      {active && (
+        <div className="flex flex-wrap items-center gap-1.5 animate-fade-in">
+          {summaryChips.map((chip) => (
             <span
-              key={key}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light animate-scale-in"
+              key={chip.key}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light animate-scale-in"
             >
-              {key}: {val}
+              {chip.label}
               <button
-                onClick={() => onChange({ ...filters, [key]: "" })}
-                aria-label={`Remove ${key} filter`}
-                className="hover:text-red-500 transition-colors"
+                type="button"
+                onClick={chip.clear}
+                aria-label={`Remove ${chip.label} filter`}
+                className="hover:opacity-70 transition-opacity"
               >
                 <X size={10} />
               </button>
             </span>
           ))}
+          <button
+            type="button"
+            onClick={() => onChange(EMPTY_FILTERS)}
+            className="text-xs text-[var(--text-muted)] hover:text-hilo-purple dark:hover:text-hilo-purple-light transition-colors ml-1"
+          >
+            Clear all
+          </button>
         </div>
       )}
     </div>
@@ -396,14 +527,12 @@ export default function Events({ onNavigate }: EventsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Event | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const prevIds = useRef<Set<string>>(new Set());
   const newIds = useRef<Set<string>>(new Set());
 
-  // Load event list
   const load = useCallback(async () => {
     try {
       const data = await fetchEvents({ limit: 100 });
@@ -426,12 +555,8 @@ export default function Events({ onNavigate }: EventsProps) {
     return () => clearInterval(id);
   }, [load]);
 
-  // Load detail when row is selected
   useEffect(() => {
-    if (!selectedId) {
-      setDetail(null);
-      return;
-    }
+    if (!selectedId) { setDetail(null); return; }
     setLoadingDetail(true);
     fetchEvent(selectedId)
       .then(setDetail)
@@ -439,7 +564,6 @@ export default function Events({ onNavigate }: EventsProps) {
       .finally(() => setLoadingDetail(false));
   }, [selectedId]);
 
-  // Derived: unique types + sources for filter dropdowns
   const eventTypes = useMemo(
     () => Array.from(new Set(events.map((e) => e.event_type))).sort(),
     [events]
@@ -449,19 +573,27 @@ export default function Events({ onNavigate }: EventsProps) {
     [events]
   );
 
-  // Apply client-side filters
   const filtered = useMemo(() => {
     return events.filter((e) => {
-      if (filters.search && !e.event_type.includes(filters.search) && !e.source_node.includes(filters.search))
+      if (
+        filters.search &&
+        !e.event_type.includes(filters.search) &&
+        !e.source_node.includes(filters.search)
+      )
         return false;
-      if (filters.eventType && e.event_type !== filters.eventType) return false;
-      if (filters.sourceNode && e.source_node !== filters.sourceNode) return false;
-      // status is always "published" for now (no backend status tracking yet)
-      if (filters.status && filters.status !== "published") return false;
+      if (filters.eventTypes.length > 0 && !filters.eventTypes.includes(e.event_type))
+        return false;
+      if (filters.sourceNodes.length > 0 && !filters.sourceNodes.includes(e.source_node))
+        return false;
+      // Status filter: all events are "published" until backend tracks status
+      const activeStatuses = filters.statuses.filter((s) => s !== "all");
+      if (activeStatuses.length > 0 && !activeStatuses.includes("published"))
+        return false;
       return true;
     });
   }, [events, filters]);
 
+  const active = hasActiveFilters(filters);
   const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
   const panelOpen = !!selectedId;
 
@@ -483,24 +615,26 @@ export default function Events({ onNavigate }: EventsProps) {
         onChange={setFilters}
         eventTypes={eventTypes}
         sourceNodes={sourceNodes}
-        mobileOpen={mobileFiltersOpen}
-        onToggleMobile={() => setMobileFiltersOpen((v) => !v)}
       />
 
       {/* Main content: list + optional detail panel */}
-      <div className={`flex gap-5 items-start transition-all duration-200`}>
-        {/* Event list — always visible; compresses to 58% on lg when panel open */}
+      <div className="flex gap-5 items-start transition-all duration-200">
+        {/* Event list */}
         <div
           className={`min-w-0 glass rounded-hilo shadow-hilo overflow-hidden transition-all duration-200 ${
             panelOpen ? "flex-none w-full lg:w-[58%]" : "flex-1"
           }`}
         >
-          {/* Table header */}
-          <div className="hidden md:grid grid-cols-[auto_1fr_auto_auto] gap-3 px-4 py-2.5 bg-hilo-purple-50/60 dark:bg-hilo-purple/10 border-b border-[var(--border)] text-xs font-medium uppercase tracking-widest text-[var(--text-muted)]">
-            <span>Status</span>
-            <span>Event</span>
-            <span>Source</span>
-            <span>Time</span>
+          {/* Table header — T4: quiet, no tint */}
+          <div className="hidden md:grid grid-cols-[auto_1fr_auto_auto] gap-3 px-4 py-2.5 border-b border-hilo-gray/20 dark:border-white/10">
+            {["Status", "Event", "Source", "Time"].map((h) => (
+              <span
+                key={h}
+                className="font-body text-xs text-hilo-dark/40 dark:text-white/30 uppercase tracking-wider"
+              >
+                {h}
+              </span>
+            ))}
           </div>
 
           {/* Loading */}
@@ -562,9 +696,7 @@ export default function Events({ onNavigate }: EventsProps) {
                 return (
                   <button
                     key={ev.id}
-                    onClick={() =>
-                      setSelectedId(isSelected ? null : ev.id)
-                    }
+                    onClick={() => setSelectedId(isSelected ? null : ev.id)}
                     aria-label={`${toSentenceCase(ev.event_type)} — ${relativeTime(ev.created_at)}`}
                     aria-pressed={isSelected}
                     className={`w-full grid grid-cols-[auto_1fr] md:grid-cols-[auto_1fr_auto_auto] gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-150 ${
@@ -592,11 +724,23 @@ export default function Events({ onNavigate }: EventsProps) {
             </div>
           )}
 
-          {/* Footer */}
-          {!loading && filtered.length > 0 && (
-            <div className="px-4 py-2.5 border-t border-[var(--border)] text-xs text-[var(--text-muted)]">
-              {filtered.length} event{filtered.length !== 1 ? "s" : ""}
-              {events.length !== filtered.length && ` (${events.length} total)`}
+          {/* Footer — T5: filter context */}
+          {!loading && (filtered.length > 0 || events.length > 0) && (
+            <div className="px-4 py-2.5 border-t border-[var(--border)] flex items-center justify-between">
+              <span className="text-xs text-hilo-dark/40 dark:text-white/30">
+                {active
+                  ? `${filtered.length} of ${events.length} event${events.length !== 1 ? "s" : ""} · filtered`
+                  : `${events.length} event${events.length !== 1 ? "s" : ""}`}
+              </span>
+              {active && (
+                <button
+                  type="button"
+                  onClick={() => setFilters(EMPTY_FILTERS)}
+                  className="text-xs text-[var(--text-muted)] hover:text-hilo-purple dark:hover:text-hilo-purple-light transition-colors"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -618,13 +762,11 @@ export default function Events({ onNavigate }: EventsProps) {
       {/* Tablet / mobile: bottom sheet + backdrop */}
       {panelOpen && selectedEvent && (
         <>
-          {/* Backdrop — tap to close */}
           <div
             className="lg:hidden fixed inset-0 z-30 bg-black/30"
             aria-hidden="true"
             onClick={() => setSelectedId(null)}
           />
-          {/* Bottom sheet: full-screen on mobile, 65vh on tablet */}
           <div
             role="dialog"
             aria-modal="true"

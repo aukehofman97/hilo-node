@@ -14,6 +14,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { fetchQueueStats, retryDeadLetter, Consumer, QueueStats } from "../api/queue";
+import FilterChips from "../components/FilterChips";
 
 // ─── useCountUp ───────────────────────────────────────────────────────────────
 
@@ -49,8 +50,6 @@ function relativeTime(iso: string | null): string {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-const NULL_TOOLTIP = "Stats available after the queue stats endpoint is reachable";
-
 // ─── KPI card ─────────────────────────────────────────────────────────────────
 
 function KpiCard({
@@ -58,11 +57,13 @@ function KpiCard({
   value,
   unit,
   accent,
+  loading,
 }: {
   label: string;
   value: number | null;
   unit?: string;
   accent?: "green" | "amber" | "red";
+  loading?: boolean;
 }) {
   const animated = useCountUp(value, 600);
   const accentClass =
@@ -79,20 +80,20 @@ function KpiCard({
       <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-muted)]">
         {label}
       </p>
-      {value === null ? (
-        <span
-          title={NULL_TOOLTIP}
-          className="font-display font-bold text-3xl text-[var(--text-muted)] cursor-help"
-        >
-          —
-        </span>
+      {loading ? (
+        // T7: skeleton when data is still loading
+        <div className="h-9 w-16 rounded-lg bg-[var(--border)] animate-pulse mt-1" />
+      ) : value === null ? (
+        // T7: no-data state — dash + label
+        <div className="flex flex-col gap-0.5">
+          <span className="font-display font-bold text-3xl text-[var(--text-muted)]">—</span>
+          <span className="text-xs text-hilo-dark/30 dark:text-white/20">No data</span>
+        </div>
       ) : (
         <p className={`font-display font-bold text-3xl ${accentClass}`}>
           {animated ?? value}
           {unit && (
-            <span className="text-sm font-normal text-[var(--text-muted)] ml-1">
-              {unit}
-            </span>
+            <span className="text-sm font-normal text-[var(--text-muted)] ml-1">{unit}</span>
           )}
         </p>
       )}
@@ -105,7 +106,7 @@ function KpiCard({
 function CompactHealthStrip({ stats }: { stats: QueueStats }) {
   const deadLetters = stats.dead_letters ?? 0;
   return (
-    <div className="glass rounded-hilo px-5 py-3 flex flex-wrap items-center gap-4 text-sm border border-amber-300/40 dark:border-amber-700/40 bg-amber-50/40 dark:bg-amber-950/10 transition-all duration-400">
+    <div className="glass rounded-hilo px-5 py-3 flex flex-wrap items-center gap-4 text-sm border border-amber-300/40 dark:border-amber-700/40 bg-amber-50/40 dark:bg-amber-950/10 transition-all duration-300">
       <span className="text-[var(--text-muted)]">
         Pending:{" "}
         <strong className="text-[var(--text)]">{stats.messages_ready ?? "—"}</strong>
@@ -113,9 +114,7 @@ function CompactHealthStrip({ stats }: { stats: QueueStats }) {
       <span className="text-[var(--text-muted)]">
         Throughput:{" "}
         <strong className="text-[var(--text)]">
-          {stats.throughput_per_minute != null
-            ? `${stats.throughput_per_minute}/min`
-            : "—"}
+          {stats.throughput_per_minute != null ? `${stats.throughput_per_minute}/min` : "—"}
         </strong>
       </span>
       <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-semibold">
@@ -153,16 +152,9 @@ function ConsumerList({ consumers }: { consumers: Consumer[] }) {
   return (
     <div className="divide-y divide-[var(--border)]">
       {consumers.map((c) => (
-        <div
-          key={c.id}
-          className="flex items-center gap-3 py-3 text-sm"
-        >
-          <span
-            className={`h-2 w-2 rounded-full flex-shrink-0 ${CONSUMER_DOT[c.status]}`}
-          />
-          <span className="flex-1 font-mono text-[var(--text)] truncate text-xs">
-            {c.id}
-          </span>
+        <div key={c.id} className="flex items-center gap-3 py-3 text-sm">
+          <span className={`h-2 w-2 rounded-full flex-shrink-0 ${CONSUMER_DOT[c.status]}`} />
+          <span className="flex-1 font-mono text-[var(--text)] truncate text-xs">{c.id}</span>
           <span
             className={`text-xs font-medium ${
               c.status === "active"
@@ -197,14 +189,25 @@ interface MockDeadLetter {
 
 type RetryState = "idle" | "loading" | "success" | "error";
 
-function DeadLetterSection({
-  count,
-  problemState,
-}: {
-  count: number;
-  problemState: boolean;
-}) {
-  // TODO: replace mock data with GET /queue/dead-letters once endpoint is built
+// T8: classify error_reason into filter categories
+type ErrorCategory = "all" | "timeout" | "validation" | "connection";
+
+function classifyError(reason: string): ErrorCategory {
+  const r = reason.toLowerCase();
+  if (r.includes("timeout")) return "timeout";
+  if (r.includes("validation")) return "validation";
+  if (r.includes("connection") || r.includes("retry")) return "connection";
+  return "connection";
+}
+
+const ERROR_FILTER_OPTIONS = [
+  { label: "All", value: "all" },
+  { label: "Timeout", value: "timeout" },
+  { label: "Validation", value: "validation" },
+  { label: "Connection", value: "connection" },
+];
+
+function DeadLetterSection({ count, problemState }: { count: number; problemState: boolean }) {
   const [mockItems] = useState<MockDeadLetter[]>(
     count > 0
       ? Array.from({ length: Math.min(count, 3) }, (_, i) => ({
@@ -226,6 +229,8 @@ function DeadLetterSection({
   const [items, setItems] = useState(mockItems);
   const [retryAllConfirm, setRetryAllConfirm] = useState(false);
   const [expandedPayload, setExpandedPayload] = useState<string | null>(null);
+  // T8: error type filter
+  const [errorFilter, setErrorFilter] = useState<string[]>(["all"]);
 
   const handleRetry = async (id: string) => {
     setRetryStates((s) => ({ ...s, [id]: "loading" }));
@@ -238,10 +243,7 @@ function DeadLetterSection({
       }, 600);
     } catch {
       setRetryStates((s) => ({ ...s, [id]: "error" }));
-      setTimeout(
-        () => setRetryStates((s) => ({ ...s, [id]: "idle" })),
-        2000
-      );
+      setTimeout(() => setRetryStates((s) => ({ ...s, [id]: "idle" })), 2000);
     }
   };
 
@@ -252,17 +254,21 @@ function DeadLetterSection({
 
   if (count === 0) {
     return (
-      <div
-        className={`glass rounded-hilo border border-[var(--border)] px-5 py-4 flex items-center gap-2 transition-all duration-400`}
-      >
+      <div className="glass rounded-hilo border border-[var(--border)] px-5 py-4 flex items-center gap-2 transition-all duration-300">
         <CheckCircle size={16} className="text-green-500" />
         <span className="text-sm text-[var(--text-muted)]">No failed messages</span>
       </div>
     );
   }
 
+  // Apply error type filter
+  const visibleItems =
+    errorFilter.includes("all")
+      ? items
+      : items.filter((m) => errorFilter.includes(classifyError(m.error_reason)));
+
   return (
-    <div className="glass rounded-hilo shadow-hilo border border-amber-300/40 dark:border-amber-700/40 overflow-hidden transition-all duration-400">
+    <div className="glass rounded-hilo shadow-hilo border border-amber-300/40 dark:border-amber-700/40 overflow-hidden transition-all duration-300">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
         <div className="flex items-center gap-2">
@@ -275,8 +281,7 @@ function DeadLetterSection({
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <p className="text-xs text-[var(--text-muted)] italic">
-            {/* TODO: replace mock data with GET /queue/dead-letters endpoint */}
+          <p className="text-xs text-[var(--text-muted)] italic hidden sm:block">
             Showing mock data — API endpoint pending
           </p>
           {items.length > 1 && !retryAllConfirm && (
@@ -309,9 +314,27 @@ function DeadLetterSection({
         </div>
       </div>
 
+      {/* T8: Error type filter chips — only when multiple items */}
+      {items.length > 1 && (
+        <div className="px-5 py-3 border-b border-[var(--border)]">
+          <FilterChips
+            options={ERROR_FILTER_OPTIONS}
+            selected={errorFilter}
+            onChange={setErrorFilter}
+            multiSelect
+            allValue="all"
+          />
+        </div>
+      )}
+
       {/* Messages */}
       <div className="divide-y divide-[var(--border)]">
-        {items.map((msg) => {
+        {visibleItems.length === 0 && (
+          <p className="px-5 py-6 text-sm text-[var(--text-muted)] text-center">
+            No messages match this filter.
+          </p>
+        )}
+        {visibleItems.map((msg) => {
           const state = retryStates[msg.message_id] ?? "idle";
           return (
             <div
@@ -437,9 +460,14 @@ export default function Queue() {
             Message queue health and dead-letter management · auto-refreshes every 10 s
           </p>
         </div>
+        {/* T6: ghost/secondary Refresh button */}
         <button
           onClick={() => { setLoading(true); load(); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-hilo-purple-50 hover:bg-hilo-purple-100 dark:bg-hilo-purple/15 dark:hover:bg-hilo-purple/25 text-hilo-purple-dark dark:text-hilo-purple-light text-sm font-medium transition-all duration-200"
+          className="flex items-center gap-2 px-4 py-2 rounded-hilo text-sm transition-all duration-200
+            bg-transparent border border-hilo-gray/30 text-hilo-dark/60
+            hover:border-hilo-purple/50 hover:text-hilo-purple
+            dark:border-white/20 dark:text-white/60
+            dark:hover:border-hilo-purple-light/50 dark:hover:text-hilo-purple-light"
         >
           <RefreshCw size={13} />
           Refresh
@@ -450,9 +478,7 @@ export default function Queue() {
       {!loading && error && (
         <div className="glass rounded-hilo p-6 flex items-center justify-between border-l-4 border-l-red-400">
           <div>
-            <p className="font-semibold text-red-600 dark:text-red-400 mb-0.5">
-              API unreachable
-            </p>
+            <p className="font-semibold text-red-600 dark:text-red-400 mb-0.5">API unreachable</p>
             <p className="text-[var(--text-muted)] text-sm">{error}</p>
           </div>
           <button
@@ -486,18 +512,14 @@ export default function Queue() {
 
       {/* Main content */}
       {!loading && stats && (
-        <div className="space-y-4 transition-all duration-400">
-          {/* Health section — expanded (healthy) or compact strip (problem) */}
+        <div className="space-y-4 transition-all duration-300">
+          {/* T9: lg:grid-cols-4 (was md on healthy state) */}
           {!problemState ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 transition-all duration-400">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 transition-all duration-300">
               <KpiCard
                 label="Pending"
                 value={stats.messages_ready}
-                accent={
-                  (stats.messages_ready ?? 0) > 20
-                    ? "amber"
-                    : "green"
-                }
+                accent={(stats.messages_ready ?? 0) > 20 ? "amber" : "green"}
               />
               <KpiCard
                 label="Throughput"
@@ -524,14 +546,11 @@ export default function Queue() {
             <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-muted)] px-1">
               Dead Letters
             </p>
-            <DeadLetterSection
-              count={deadLetters}
-              problemState={problemState}
-            />
+            <DeadLetterSection count={deadLetters} problemState={problemState} />
           </div>
 
           {/* Consumer status */}
-          <div className="glass rounded-hilo shadow-hilo overflow-hidden border border-[var(--border)] transition-all duration-400">
+          <div className="glass rounded-hilo shadow-hilo overflow-hidden border border-[var(--border)] transition-all duration-300">
             <button
               onClick={() => setConsumersExpanded((v) => !v)}
               className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-hilo-purple-50/30 dark:hover:bg-white/4 transition-colors"
@@ -549,9 +568,7 @@ export default function Queue() {
                   </p>
                 )}
                 {!consumersExpanded && stats.consumer_details.length === 0 && (
-                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                    No consumers connected
-                  </p>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">No consumers connected</p>
                 )}
               </div>
               {consumersExpanded ? (
