@@ -65,6 +65,10 @@ module.exports = {
           "60%": { transform: "translateX(-3px)" },
           "80%": { transform: "translateX(3px)" },
         },
+        slideUp: {
+          "0%": { opacity: "0", transform: "translateY(100%)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "fade-in": "fadeIn 200ms ease",
@@ -75,6 +79,7 @@ module.exports = {
         "slide-out-right": "slideOutRight 150ms ease forwards",
         "scale-in": "scaleIn 150ms ease",
         shake: "shake 300ms ease",
+        "slide-up": "slideUp 220ms ease",
       },
     },
   },

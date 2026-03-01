@@ -108,7 +108,7 @@ function TurtleView({ raw }: { raw: string }) {
           while ((match = uriRe.exec(s)) !== null) {
             if (match.index > last) nodes.push(s.slice(last, match.index));
             nodes.push(
-              <span key={match.index} className="text-teal-600 dark:text-teal-400">
+              <span key={match.index} className="text-hilo-purple-dark dark:text-hilo-purple-light">
                 &lt;{shortenUri(match[1])}&gt;
               </span>
             );
@@ -157,6 +157,7 @@ function DetailPanel({
         </div>
         <button
           onClick={onClose}
+          aria-label="Close detail panel"
           className="w-7 h-7 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition-colors"
         >
           <X size={14} />
@@ -358,6 +359,7 @@ function FilterBar({
               {key}: {val}
               <button
                 onClick={() => onChange({ ...filters, [key]: "" })}
+                aria-label={`Remove ${key} filter`}
                 className="hover:text-red-500 transition-colors"
               >
                 <X size={10} />
@@ -406,7 +408,7 @@ export default function Events({ onNavigate }: EventsProps) {
     try {
       const data = await fetchEvents({ limit: 100 });
       const incoming = new Set(data.map((e) => e.id));
-      const fresh = new Set([...incoming].filter((id) => !prevIds.current.has(id)));
+      const fresh = new Set(Array.from(incoming).filter((id) => !prevIds.current.has(id)));
       newIds.current = fresh;
       prevIds.current = incoming;
       setEvents(data);
@@ -439,11 +441,11 @@ export default function Events({ onNavigate }: EventsProps) {
 
   // Derived: unique types + sources for filter dropdowns
   const eventTypes = useMemo(
-    () => [...new Set(events.map((e) => e.event_type))].sort(),
+    () => Array.from(new Set(events.map((e) => e.event_type))).sort(),
     [events]
   );
   const sourceNodes = useMemo(
-    () => [...new Set(events.map((e) => e.source_node))].sort(),
+    () => Array.from(new Set(events.map((e) => e.source_node))).sort(),
     [events]
   );
 
@@ -486,15 +488,11 @@ export default function Events({ onNavigate }: EventsProps) {
       />
 
       {/* Main content: list + optional detail panel */}
-      <div
-        className={`flex gap-5 transition-all duration-200 ${
-          panelOpen ? "items-start" : ""
-        }`}
-      >
-        {/* Event list */}
+      <div className={`flex gap-5 items-start transition-all duration-200`}>
+        {/* Event list — always visible; compresses to 58% on lg when panel open */}
         <div
-          className={`flex-1 min-w-0 glass rounded-hilo shadow-hilo overflow-hidden transition-all duration-200 ${
-            panelOpen ? "hidden lg:block lg:w-[58%] lg:flex-none" : "w-full"
+          className={`min-w-0 glass rounded-hilo shadow-hilo overflow-hidden transition-all duration-200 ${
+            panelOpen ? "flex-none w-full lg:w-[58%]" : "flex-1"
           }`}
         >
           {/* Table header */}
@@ -567,6 +565,8 @@ export default function Events({ onNavigate }: EventsProps) {
                     onClick={() =>
                       setSelectedId(isSelected ? null : ev.id)
                     }
+                    aria-label={`${toSentenceCase(ev.event_type)} — ${relativeTime(ev.created_at)}`}
+                    aria-pressed={isSelected}
                     className={`w-full grid grid-cols-[auto_1fr] md:grid-cols-[auto_1fr_auto_auto] gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-150 ${
                       isSelected
                         ? "bg-hilo-purple-50 dark:bg-hilo-purple/10"
@@ -601,9 +601,9 @@ export default function Events({ onNavigate }: EventsProps) {
           )}
         </div>
 
-        {/* Detail panel */}
+        {/* Desktop side panel (lg+) */}
         {panelOpen && selectedEvent && (
-          <div className="w-full lg:w-[42%] lg:flex-none">
+          <div className="hidden lg:block flex-none w-[42%]">
             <DetailPanel
               event={selectedEvent}
               detail={detail}
@@ -614,6 +614,33 @@ export default function Events({ onNavigate }: EventsProps) {
           </div>
         )}
       </div>
+
+      {/* Tablet / mobile: bottom sheet + backdrop */}
+      {panelOpen && selectedEvent && (
+        <>
+          {/* Backdrop — tap to close */}
+          <div
+            className="lg:hidden fixed inset-0 z-30 bg-black/30"
+            aria-hidden="true"
+            onClick={() => setSelectedId(null)}
+          />
+          {/* Bottom sheet: full-screen on mobile, 65vh on tablet */}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Event detail: ${toSentenceCase(selectedEvent.event_type)}`}
+            className="lg:hidden fixed inset-x-0 bottom-0 z-40 h-full md:h-[65vh] overflow-y-auto rounded-t-hilo shadow-hilo-lg border-t border-[var(--border)] bg-[var(--surface)] animate-slide-up"
+          >
+            <DetailPanel
+              event={selectedEvent}
+              detail={detail}
+              loadingDetail={loadingDetail}
+              onClose={() => setSelectedId(null)}
+              onNavigate={onNavigate}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
