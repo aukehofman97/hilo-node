@@ -36,3 +36,13 @@ export async function fetchEvent(id: string): Promise<Event> {
   if (!resp.ok) throw new Error(`fetchEvent failed (${resp.status})`);
   return resp.json();
 }
+
+/** Fetch the full event from a remote node using a bearer token. */
+export async function fetchRemoteEvent(dataUrl: string, token: string): Promise<Event> {
+  const resp = await fetch(dataUrl, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  if (resp.status === 401) throw new Error("Token rejected — request a fresh token from the Connections page");
+  if (!resp.ok) throw new Error(`Remote fetch failed (${resp.status})`);
+  return resp.json();
+}

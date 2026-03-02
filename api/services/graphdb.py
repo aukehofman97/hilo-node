@@ -222,13 +222,14 @@ LIMIT {limit}
 def get_event_by_id(event_id: str) -> EventResponse | None:
     sparql = f"""
 {PREFIXES}
-SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
+SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload ?dataUrl WHERE {{
     <http://hilo.semantics.io/events/meta/{event_id}> a hilo:Event ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
     OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:subject ?subject . }}
     OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:triplesPayload ?triplesPayload . }}
+    OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:dataUrl ?dataUrl . }}
 }}
 """
     results = query_data(sparql)
@@ -236,6 +237,9 @@ SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
     if not bindings:
         return None
     b = bindings[0]
+    links: dict = {"self": f"/events/{event_id}"}
+    if data_url := b.get("dataUrl", {}).get("value"):
+        links["data"] = data_url
     return EventResponse(
         id=event_id,
         source_node=b["sourceNode"]["value"],
@@ -243,5 +247,5 @@ SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
         subject=b.get("subject", {}).get("value", ""),
         triples=b.get("triplesPayload", {}).get("value", ""),
         created_at=datetime.fromisoformat(b["createdAt"]["value"].replace("Z", "+00:00")),
-        links={"self": f"/events/{event_id}"},
+        links=links,
     )

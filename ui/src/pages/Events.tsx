@@ -13,7 +13,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { fetchEvents, fetchEvent, Event } from "../api/events";
+import { fetchEvents, fetchEvent, fetchRemoteEvent, Event } from "../api/events";
+import { getToken } from "../api/connections";
 import FilterChips from "../components/FilterChips";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -130,11 +131,14 @@ interface DetailPanelProps {
   event: Event;
   detail: Event | null;
   loadingDetail: boolean;
+  fetchingRemote: boolean;
+  remoteError: string | null;
   onClose: () => void;
   onNavigate: (page: string) => void;
+  onFetchFromSource: () => void;
 }
 
-function DetailPanel({ event, detail, loadingDetail, onClose, onNavigate }: DetailPanelProps) {
+function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError, onClose, onNavigate, onFetchFromSource }: DetailPanelProps) {
   return (
     <div className="animate-slide-in-right glass rounded-hilo shadow-hilo border border-[var(--border)] flex flex-col h-full overflow-hidden">
       <div className="flex items-start justify-between p-4 border-b border-[var(--border)]">
@@ -182,8 +186,28 @@ function DetailPanel({ event, detail, loadingDetail, onClose, onNavigate }: Deta
               />
             ))}
           </div>
+        ) : detail?.triples ? (
+          <TurtleView raw={detail.triples} />
+        ) : detail?.links?.data ? (
+          <div className="space-y-3">
+            <p className="text-xs text-[var(--text-muted)]">
+              This is a notification — full triples are stored on <span className="font-medium text-[var(--text)]">{detail.source_node}</span>.
+            </p>
+            <button
+              onClick={onFetchFromSource}
+              disabled={fetchingRemote}
+              className="flex items-center gap-2 px-3 py-2 rounded-hilo text-xs font-semibold bg-hilo-purple hover:bg-hilo-purple-dark text-white transition-colors disabled:opacity-60"
+            >
+              {fetchingRemote
+                ? <><ArrowRight size={13} className="animate-pulse" /> Fetching…</>
+                : <><ArrowRight size={13} /> Fetch full event from {detail.source_node}</>}
+            </button>
+            {remoteError && (
+              <p className="text-xs text-red-500 dark:text-red-400">{remoteError}</p>
+            )}
+          </div>
         ) : (
-          <TurtleView raw={detail?.triples ?? ""} />
+          <TurtleView raw="" />
         )}
 
         {detail?.links && Object.keys(detail.links).length > 1 && (
@@ -530,6 +554,8 @@ export default function Events({ onNavigate }: EventsProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Event | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [fetchingRemote, setFetchingRemote] = useState(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   const prevIds = useRef<Set<string>>(new Set());
   const newIds = useRef<Set<string>>(new Set());
 
@@ -556,13 +582,29 @@ export default function Events({ onNavigate }: EventsProps) {
   }, [load]);
 
   useEffect(() => {
-    if (!selectedId) { setDetail(null); return; }
+    if (!selectedId) { setDetail(null); setRemoteError(null); return; }
     setLoadingDetail(true);
+    setRemoteError(null);
     fetchEvent(selectedId)
       .then(setDetail)
       .catch(() => setDetail(null))
       .finally(() => setLoadingDetail(false));
   }, [selectedId]);
+
+  const handleFetchFromSource = async () => {
+    if (!detail?.links?.data || !detail.source_node) return;
+    setFetchingRemote(true);
+    setRemoteError(null);
+    try {
+      const tokenResp = await getToken(detail.source_node);
+      const full = await fetchRemoteEvent(detail.links.data, tokenResp.token);
+      setDetail(full);
+    } catch (e: any) {
+      setRemoteError(e.message);
+    } finally {
+      setFetchingRemote(false);
+    }
+  };
 
   const eventTypes = useMemo(
     () => Array.from(new Set(events.map((e) => e.event_type))).sort(),
@@ -752,8 +794,11 @@ export default function Events({ onNavigate }: EventsProps) {
               event={selectedEvent}
               detail={detail}
               loadingDetail={loadingDetail}
+              fetchingRemote={fetchingRemote}
+              remoteError={remoteError}
               onClose={() => setSelectedId(null)}
               onNavigate={onNavigate}
+              onFetchFromSource={handleFetchFromSource}
             />
           </div>
         )}
@@ -777,8 +822,11 @@ export default function Events({ onNavigate }: EventsProps) {
               event={selectedEvent}
               detail={detail}
               loadingDetail={loadingDetail}
+              fetchingRemote={fetchingRemote}
+              remoteError={remoteError}
               onClose={() => setSelectedId(null)}
               onNavigate={onNavigate}
+              onFetchFromSource={handleFetchFromSource}
             />
           </div>
         </>
