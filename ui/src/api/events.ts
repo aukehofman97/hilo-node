@@ -30,8 +30,9 @@ export async function fetchEvents(params: FetchEventsParams | number = {}): Prom
 }
 
 export async function fetchEvent(id: string): Promise<Event> {
+  const internalKey = process.env.REACT_APP_INTERNAL_KEY || "dev";
   const resp = await fetch(`${API_URL}/events/${id}`, {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", Authorization: `Bearer ${internalKey}` },
   });
   if (!resp.ok) throw new Error(`fetchEvent failed (${resp.status})`);
   return resp.json();

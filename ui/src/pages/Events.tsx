@@ -54,11 +54,12 @@ function shortenUri(uri: string): string {
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-type EventStatus = "published" | "delivered" | "failed" | "dead-lettered";
+type EventStatus = "published" | "received" | "delivered" | "failed" | "dead-lettered";
 
 const STATUS_STYLES: Record<EventStatus, string> = {
   published:
     "bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light",
+  received: "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
   delivered: "bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400",
   failed: "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400",
   "dead-lettered": "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
@@ -66,6 +67,7 @@ const STATUS_STYLES: Record<EventStatus, string> = {
 
 const STATUS_DOT: Record<EventStatus, string> = {
   published: "bg-hilo-purple",
+  received: "bg-blue-500",
   delivered: "bg-green-500",
   failed: "bg-red-500",
   "dead-lettered": "bg-amber-400",
@@ -133,12 +135,13 @@ interface DetailPanelProps {
   loadingDetail: boolean;
   fetchingRemote: boolean;
   remoteError: string | null;
+  localNodeId: string | null;
   onClose: () => void;
   onNavigate: (page: string) => void;
   onFetchFromSource: () => void;
 }
 
-function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError, onClose, onNavigate, onFetchFromSource }: DetailPanelProps) {
+function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError, localNodeId, onClose, onNavigate, onFetchFromSource }: DetailPanelProps) {
   return (
     <div className="animate-slide-in-right glass rounded-hilo shadow-hilo border border-[var(--border)] flex flex-col h-full overflow-hidden">
       <div className="flex items-start justify-between p-4 border-b border-[var(--border)]">
@@ -169,7 +172,7 @@ function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError
             <span className="text-[var(--text)] font-mono break-all">{value}</span>
           </div>
         ))}
-        <StatusBadge status="published" />
+        <StatusBadge status={event.source_node === localNodeId ? "published" : "received"} />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -556,8 +559,17 @@ export default function Events({ onNavigate }: EventsProps) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [fetchingRemote, setFetchingRemote] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [localNodeId, setLocalNodeId] = useState<string | null>(null);
   const prevIds = useRef<Set<string>>(new Set());
   const newIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+    fetch(`${apiUrl}/.well-known/hilo-node`)
+      .then((r) => r.json())
+      .then((d) => setLocalNodeId(d.node_id))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -747,7 +759,7 @@ export default function Events({ onNavigate }: EventsProps) {
                         : "hover:bg-hilo-purple-50/50 dark:hover:bg-white/5"
                     } ${isNew ? "animate-slide-in-top" : ""}`}
                   >
-                    <StatusBadge status="published" />
+                    <StatusBadge status={ev.source_node === localNodeId ? "published" : "received"} />
                     <span className="text-sm text-[var(--text)] truncate">
                       {toSentenceCase(ev.event_type)}
                     </span>
@@ -796,6 +808,7 @@ export default function Events({ onNavigate }: EventsProps) {
               loadingDetail={loadingDetail}
               fetchingRemote={fetchingRemote}
               remoteError={remoteError}
+              localNodeId={localNodeId}
               onClose={() => setSelectedId(null)}
               onNavigate={onNavigate}
               onFetchFromSource={handleFetchFromSource}
@@ -824,6 +837,7 @@ export default function Events({ onNavigate }: EventsProps) {
               loadingDetail={loadingDetail}
               fetchingRemote={fetchingRemote}
               remoteError={remoteError}
+              localNodeId={localNodeId}
               onClose={() => setSelectedId(null)}
               onNavigate={onNavigate}
               onFetchFromSource={handleFetchFromSource}
