@@ -75,16 +75,22 @@ The GraphDB repository is created automatically on first boot.
 ### Send a test event
 
 ```bash
+# V2: source_node is stamped server-side; subject is required (primary RDF subject URI)
 curl -X POST http://localhost:8000/events \
   -H "Content-Type: application/json" \
   -d '{
-    "source_node": "node-a",
     "event_type": "shipment_created",
-    "triples": [
-      "<https://example.org/shipment/1> <https://schema.org/name> \"Shipment 1\" .",
-      "<https://example.org/shipment/1> <https://schema.org/status> \"created\" ."
-    ]
+    "subject": "https://example.org/shipment/1",
+    "triples": "@prefix schema: <https://schema.org/> .\n<https://example.org/shipment/1> schema:name \"Shipment 1\" ;\n  schema:status \"created\" ."
   }'
+```
+
+To retrieve full event data (requires auth — use the internal dev key locally):
+
+```bash
+# Replace <event-id> with the id returned by POST /events
+curl http://localhost:8000/events/<event-id> \
+  -H "Authorization: Bearer dev"
 ```
 
 Then open the UI at http://localhost:3000 — the event will appear in the Events Monitor and the triples will be queryable in the Data Explorer.

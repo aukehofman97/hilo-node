@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     rabbitmq_management_user: str = "hilo"
     rabbitmq_management_pass: str = "hilo"
     node_id: str = "node-a"
+    node_name: str = "HILO Node"
+    node_base_url: str = "http://localhost:8000"
+    private_key_path: str = "/data/node.key"
+    db_path: str = "/data/hilo.db"
+    jwt_expiry_minutes: int = 5
+    jwt_audience: str = ""  # defaults to node_id at runtime if empty
+    internal_key: str = "dev"
 
     model_config = SettingsConfigDict(env_prefix="HILO_")
 

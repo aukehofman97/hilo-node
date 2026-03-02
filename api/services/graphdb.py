@@ -5,7 +5,7 @@ from datetime import datetime
 import httpx
 
 from config import settings
-from models.events import EventCreate, EventResponse
+from models.events import EventCreate, EventNotification, EventResponse
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ def check_health() -> str:
 def store_event(event: EventCreate) -> EventResponse:
     event_id = str(uuid.uuid4())
     created_at = datetime.utcnow()
+    # source_node stamped server-side — callers do not assert their own identity
+    source_node = settings.node_id
 
     triples_escaped = (
         event.triples
@@ -55,6 +57,7 @@ def store_event(event: EventCreate) -> EventResponse:
         .replace("\n", "\\n")
         .replace("\r", "\\r")
     )
+    subject_escaped = event.subject.replace('"', '\\"')
 
     meta_turtle = f"""
 @prefix hilo: <http://hilo.semantics.io/ontology/> .
@@ -62,8 +65,9 @@ def store_event(event: EventCreate) -> EventResponse:
 
 <http://hilo.semantics.io/events/meta/{event_id}> a hilo:Event ;
     hilo:eventId "{event_id}" ;
-    hilo:sourceNode "{event.source_node}" ;
+    hilo:sourceNode "{source_node}" ;
     hilo:eventType "{event.event_type}" ;
+    hilo:subject "{subject_escaped}" ;
     hilo:createdAt "{created_at.isoformat()}Z"^^xsd:dateTime ;
     hilo:triplesPayload "{triples_escaped}" .
 """
@@ -74,12 +78,37 @@ def store_event(event: EventCreate) -> EventResponse:
 
     return EventResponse(
         id=event_id,
-        source_node=event.source_node,
+        source_node=source_node,
         event_type=event.event_type,
+        subject=event.subject,
         triples=event.triples,
         created_at=created_at,
         links={"self": f"/events/{event_id}"},
     )
+
+
+def store_notification(notification: EventNotification) -> None:
+    """Store an incoming EventNotification from a peer node.
+
+    Writes metadata only — no triples. The data_url can be used to fetch
+    the full event from the source node on demand.
+    """
+    subject_escaped = notification.subject.replace('"', '\\"')
+    data_url_escaped = notification.data_url.replace('"', '\\"')
+
+    meta_turtle = f"""
+@prefix hilo: <http://hilo.semantics.io/ontology/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://hilo.semantics.io/events/meta/{notification.event_id}> a hilo:Event ;
+    hilo:eventId "{notification.event_id}" ;
+    hilo:sourceNode "{notification.source_node}" ;
+    hilo:eventType "{notification.event_type}" ;
+    hilo:subject "{subject_escaped}" ;
+    hilo:createdAt "{notification.created_at.isoformat()}"^^xsd:dateTime ;
+    hilo:dataUrl "{data_url_escaped}" .
+"""
+    insert_turtle(meta_turtle)
 
 
 def _turtle_data_endpoint() -> str:
@@ -159,12 +188,13 @@ def get_events(
 
     sparql = f"""
 {PREFIXES}
-SELECT ?eventId ?sourceNode ?eventType ?createdAt WHERE {{
+SELECT ?eventId ?sourceNode ?eventType ?subject ?createdAt WHERE {{
     ?event a hilo:Event ;
            hilo:eventId ?eventId ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
+    OPTIONAL {{ ?event hilo:subject ?subject . }}
     {filter_block}
 }}
 ORDER BY DESC(?createdAt)
@@ -178,6 +208,7 @@ LIMIT {limit}
                 id=binding["eventId"]["value"],
                 source_node=binding["sourceNode"]["value"],
                 event_type=binding["eventType"]["value"],
+                subject=binding.get("subject", {}).get("value", ""),
                 triples="",
                 created_at=datetime.fromisoformat(
                     binding["createdAt"]["value"].replace("Z", "+00:00")
@@ -191,11 +222,12 @@ LIMIT {limit}
 def get_event_by_id(event_id: str) -> EventResponse | None:
     sparql = f"""
 {PREFIXES}
-SELECT ?sourceNode ?eventType ?createdAt ?triplesPayload WHERE {{
+SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
     <http://hilo.semantics.io/events/meta/{event_id}> a hilo:Event ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
+    OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:subject ?subject . }}
     OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:triplesPayload ?triplesPayload . }}
 }}
 """
@@ -208,6 +240,7 @@ SELECT ?sourceNode ?eventType ?createdAt ?triplesPayload WHERE {{
         id=event_id,
         source_node=b["sourceNode"]["value"],
         event_type=b["eventType"]["value"],
+        subject=b.get("subject", {}).get("value", ""),
         triples=b.get("triplesPayload", {}).get("value", ""),
         created_at=datetime.fromisoformat(b["createdAt"]["value"].replace("Z", "+00:00")),
         links={"self": f"/events/{event_id}"},
