@@ -1,4 +1,4 @@
-"""Tests for GET /events with limit and event_type params."""
+"""Tests for event endpoints including JWT auth on GET /events/{id}."""
 from datetime import datetime
 from unittest.mock import patch
 
@@ -6,15 +6,18 @@ from fastapi.testclient import TestClient
 
 from main import app
 from models.events import EventResponse
+from services.jwt_service import require_jwt
 
 client = TestClient(app)
 
+# ── Fixtures ──────────────────────────────────────────────────────────────────
 
 def _make_event(event_type: str = "order_created", n: int = 1) -> EventResponse:
     return EventResponse(
         id=f"evt-{n:04d}",
         source_node="node-a",
         event_type=event_type,
+        subject=f"http://hilo.semantics.io/events/order-{n:04d}",
         triples="",
         created_at=datetime(2026, 3, 1, 12, 0, 0),
         links={"self": f"/events/evt-{n:04d}"},
@@ -27,6 +30,18 @@ MOCK_EVENTS = [
     _make_event("order_created", 3),
 ]
 
+
+def _bypass_jwt():
+    """Override require_jwt to bypass auth in tests that don't test JWT itself."""
+    app.dependency_overrides[require_jwt] = lambda: {"sub": "internal", "iss": "node-a"}
+    return app
+
+
+def _restore_jwt():
+    app.dependency_overrides.pop(require_jwt, None)
+
+
+# ── GET /events (list) — no auth required ─────────────────────────────────────
 
 def test_list_events_default():
     """Returns all events with default limit."""
@@ -72,17 +87,48 @@ def test_list_events_limit_out_of_range():
     assert response.status_code == 422
 
 
-def test_get_event_by_id_not_found():
-    """Returns 404 for unknown event ID."""
+# ── GET /events/{id} — requires JWT ───────────────────────────────────────────
+
+def test_get_event_by_id_no_auth_returns_401():
+    """GET /events/{id} without Authorization header returns 401."""
+    _restore_jwt()
+    response = client.get("/events/evt-0001")
+    assert response.status_code == 401
+
+
+def test_get_event_by_id_invalid_token_returns_401():
+    """GET /events/{id} with garbage token returns 401."""
+    _restore_jwt()
+    response = client.get("/events/evt-0001", headers={"Authorization": "Bearer not-a-real-token"})
+    assert response.status_code == 401
+
+
+def test_get_event_by_id_internal_key_returns_200():
+    """GET /events/{id} with HILO_INTERNAL_KEY returns 200."""
+    _restore_jwt()
+    event = _make_event("order_created", 1)
+    with patch("services.graphdb.get_event_by_id", return_value=event):
+        # Default internal_key is "dev" (from config default)
+        response = client.get("/events/evt-0001", headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 200
+    assert response.json()["id"] == "evt-0001"
+
+
+def test_get_event_by_id_not_found_with_auth():
+    """Returns 404 for unknown event ID when auth is valid."""
+    _bypass_jwt()
     with patch("services.graphdb.get_event_by_id", return_value=None):
         response = client.get("/events/nonexistent-id")
     assert response.status_code == 404
+    _restore_jwt()
 
 
-def test_get_event_by_id_success():
-    """Returns event when found."""
+def test_get_event_by_id_success_with_auth():
+    """Returns event when found and auth is valid."""
+    _bypass_jwt()
     event = _make_event("order_created", 1)
     with patch("services.graphdb.get_event_by_id", return_value=event):
         response = client.get("/events/evt-0001")
     assert response.status_code == 200
     assert response.json()["id"] == "evt-0001"
+    _restore_jwt()

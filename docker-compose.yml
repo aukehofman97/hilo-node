@@ -17,6 +17,7 @@ networks:
 
 volumes:
   graphdb-data:
+  hilo-api-data:
 
 services:
 
@@ -87,6 +88,11 @@ services:
       HILO_GRAPHDB_REPOSITORY: ${GRAPHDB_REPO:-hilo}
       HILO_RABBITMQ_URL: amqp://hilo:hilo@queue:5672/
       HILO_NODE_ID: ${NODE_ID:-node-a}
+      HILO_NODE_NAME: ${NODE_NAME:-HILO Node}
+      HILO_NODE_BASE_URL: ${NODE_BASE_URL:-http://localhost:8000}
+      HILO_INTERNAL_KEY: ${INTERNAL_KEY:-dev}
+    volumes:
+      - hilo-api-data:/data
     networks:
       - hilo-net
     depends_on:
@@ -112,12 +118,15 @@ services:
       HILO_NODE_ID: ${NODE_ID:-node-a}
       HILO_GRAPHDB_URL: http://graphdb:7200
       HILO_GRAPHDB_REPOSITORY: ${GRAPHDB_REPO:-hilo}
+      HILO_API_URL: http://api:8000
     networks:
       - hilo-net
     depends_on:
       queue:
         condition: service_healthy
       graphdb:
+        condition: service_healthy
+      api:
         condition: service_healthy
     restart: unless-stopped
 

@@ -3,7 +3,7 @@ import logging
 import pika
 
 from config import settings
-from models.events import EventResponse
+from models.events import EventNotification, EventResponse
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,15 @@ def check_health() -> str:
         raise RuntimeError(f"RabbitMQ unreachable: {exc}") from exc
 
 
-def publish_event(event: EventResponse) -> None:
+def publish_notification(notification: EventNotification) -> None:
+    """Publish a lightweight EventNotification to the queue.
+    The consumer will forward this to connected peers."""
     conn = _get_connection()
     try:
         channel = conn.channel()
         ensure_infrastructure(channel)
         routing_key = f"events.{settings.node_id}"
-        body = event.model_dump_json()
+        body = notification.model_dump_json()
         channel.basic_publish(
             exchange=EXCHANGE_NAME,
             routing_key=routing_key,
@@ -49,6 +51,6 @@ def publish_event(event: EventResponse) -> None:
                 content_type="application/json",
             ),
         )
-        logger.info("Published event %s to %s", event.id, routing_key)
+        logger.info("Published notification for event %s to %s", notification.event_id, routing_key)
     finally:
         conn.close()
