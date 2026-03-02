@@ -158,7 +158,7 @@ uvicorn main:app --port 9000 --reload
 **Terminal 3 — Node A consumer:**
 ```bash
 cd queue
-HILO_NODE_ID=node-a HILO_API_URL=http://localhost:8000 uvicorn python consumer.py
+HILO_NODE_ID=node-a HILO_API_URL=http://localhost:8000 python consumer.py
 ```
 
 **Terminal 4 — Node B consumer:**
@@ -178,3 +178,61 @@ For a second UI pointing at Node B, run on a different port:
 cd ui
 REACT_APP_API_URL=http://localhost:9000 npx vite --port 3001
 ```
+
+---
+
+## Running Both Nodes in Docker (same machine)
+
+Docker Desktop on macOS/Windows adds `host.docker.internal` to the container's `/etc/hosts`,
+resolving to the host machine. This is essential for cross-node forwarding when both nodes
+run in separate Docker stacks on the same host.
+
+### The host.docker.internal requirement
+
+Inside Node A's consumer container, `localhost` refers to **the container itself**, not your Mac.
+To reach Node B's API (exposed on port 9000 of the host), the consumer must use
+`http://host.docker.internal:9000`.
+
+`NODE_BASE_URL` in the `.env` files controls what a node advertises as its reachable address.
+For two-node local Docker:
+
+- `.env.node-b` — already set to `NODE_BASE_URL=http://host.docker.internal:9000` ✅
+- `.env.node-a` — uncomment `NODE_BASE_URL=http://host.docker.internal:8000` before starting
+
+```bash
+# In .env.node-a, change:
+NODE_BASE_URL=http://localhost:8000
+# to:
+NODE_BASE_URL=http://host.docker.internal:8000
+```
+
+When this is set, the peer URL you enter in the Connections UI should also use `host.docker.internal`:
+```
+http://host.docker.internal:9000   ← enter this in Node A's Connections page to connect to Node B
+http://host.docker.internal:8000   ← enter this in Node B's Connections page to connect to Node A
+```
+
+The browser on your Mac can resolve `host.docker.internal` (Docker Desktop adds it to `/etc/hosts`).
+
+### Starting both nodes
+
+```bash
+# Terminal 1 — Node A
+docker-compose up --build
+
+# Terminal 2 — Node B (separate project, all ports shifted by +1)
+docker-compose -p node-b --env-file .env.node-b up --build
+```
+
+Node A services: API :8000, UI :3000, GraphDB :7200, RabbitMQ :5672/:15672
+Node B services: API :9000, UI :3001, GraphDB :7201, RabbitMQ :5673/:15673
+
+### Resetting to single-node
+
+When you're done with two-node testing, revert `.env.node-a`:
+```bash
+# Change back:
+NODE_BASE_URL=http://localhost:8000
+```
+
+This ensures the Data Explorer and event `data_url` links work correctly in the browser.

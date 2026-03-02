@@ -59,6 +59,29 @@ export async function sendConnectionRequest(peerBaseUrl: string): Promise<Connec
   return resp.json();
 }
 
+/**
+ * Record a connection request WE sent to a peer on our own API (pending_outgoing).
+ * Called after a successful sendConnectionRequest so this node can track the outgoing
+ * state and the peer's acceptance callback finds a matching record.
+ */
+export async function recordOutgoingRequest(peer: NodeIdentity): Promise<Connection> {
+  const resp = await fetch(`${API_URL}/connections/outgoing`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      peer_node_id: peer.node_id,
+      peer_name: peer.name,
+      peer_base_url: peer.base_url,
+    }),
+  });
+  if (resp.status === 409) throw new Error("Connection already exists for this peer");
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.detail || `Record outgoing failed (${resp.status})`);
+  }
+  return resp.json();
+}
+
 export async function acceptConnection(connectionId: string): Promise<Connection> {
   const resp = await fetch(`${API_URL}/connections/${connectionId}/accept`, {
     method: "POST",
