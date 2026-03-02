@@ -4,6 +4,7 @@ import {
   Zap,
   Database,
   MessageSquare,
+  Network,
   Sun,
   Moon,
   Menu,
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { id: "events", label: "Events", icon: <Zap size={16} /> },
   { id: "data-explorer", label: "Data Explorer", icon: <Database size={16} /> },
   { id: "queue", label: "Queue", icon: <MessageSquare size={16} /> },
+  { id: "connections", label: "Connections", icon: <Network size={16} /> },
 ];
 
 export default function TopBar({ activePage, onNavigate }: TopBarProps) {
