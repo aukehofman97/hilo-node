@@ -40,6 +40,13 @@ class ConnectionResponse(BaseModel):
     updated_at: datetime
 
 
+class OutgoingConnectionRequest(BaseModel):
+    """Body for POST /connections/outgoing — records that WE sent a request to a peer."""
+    peer_node_id: str
+    peer_name: str
+    peer_base_url: str
+
+
 class NodeIdentity(BaseModel):
     """Returned by GET /.well-known/hilo-node."""
     node_id: str

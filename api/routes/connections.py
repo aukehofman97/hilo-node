@@ -2,6 +2,7 @@
 Connection management endpoints.
 
 POST /connections/request          — Node B calls on Node A to initiate
+POST /connections/outgoing         — Record an outgoing request we sent to a peer
 GET  /connections                  — List all connections (local, no auth)
 GET  /connections/{peer}/token     — Get fresh RS256 JWT for peer
 POST /connections/{id}/accept      — Operator accepts incoming request
@@ -18,6 +19,7 @@ from models.connections import (
     AcceptedCallback,
     ConnectionRequest,
     ConnectionResponse,
+    OutgoingConnectionRequest,
     TokenResponse,
 )
 from services import connections as conn_svc
@@ -42,6 +44,27 @@ def request_connection(body: ConnectionRequest):
         peer_public_key=body.public_key,
     )
     logger.info("Incoming connection request from %s (%s)", body.node_id, body.base_url)
+    return connection
+
+
+@router.post("/outgoing", response_model=ConnectionResponse, status_code=201)
+def record_outgoing_request(body: OutgoingConnectionRequest):
+    """Record a connection request WE sent to a peer (pending_outgoing).
+
+    Called by the UI immediately after successfully POSTing to the peer's /connections/request,
+    so that this node tracks the outgoing request and the peer's acceptance callback can
+    find a matching record.
+    """
+    existing = conn_svc.get_connection_by_peer(body.peer_node_id)
+    if existing:
+        raise HTTPException(status_code=409, detail="Connection already exists for this peer")
+
+    connection = conn_svc.create_outgoing_request(
+        peer_node_id=body.peer_node_id,
+        peer_name=body.peer_name,
+        peer_base_url=body.peer_base_url,
+    )
+    logger.info("Recorded outgoing connection request to %s (%s)", body.peer_node_id, body.peer_base_url)
     return connection
 
 

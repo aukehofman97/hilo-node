@@ -22,6 +22,7 @@ import {
   fetchPeerIdentity,
   getToken,
   listConnections,
+  recordOutgoingRequest,
   rejectConnection,
   resendAcceptance,
   sendConnectionRequest,
@@ -392,7 +393,10 @@ export default function Connections() {
     setSending(true);
     setSendError(null);
     try {
+      // Step 1: Send request to peer
       await sendConnectionRequest(peerUrl.trim());
+      // Step 2: Record outgoing on our own API so the acceptance callback finds a match
+      await recordOutgoingRequest(previewIdentity);
       setSendSuccess(true);
       setPeerUrl("");
       setPreviewIdentity(null);
