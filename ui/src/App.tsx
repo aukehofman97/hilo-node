@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import TopBar from "./components/TopBar";
+import Connections from "./pages/Connections";
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import DataExplorer from "./pages/DataExplorer";
 import Queue from "./pages/Queue";
 
-type Page = "dashboard" | "events" | "data-explorer" | "queue";
+type Page = "dashboard" | "events" | "data-explorer" | "queue" | "connections";
 
 function AppShell() {
   const [activePage, setActivePage] = useState<Page>("dashboard");
@@ -22,6 +23,8 @@ function AppShell() {
         return <DataExplorer />;
       case "queue":
         return <Queue />;
+      case "connections":
+        return <Connections />;
     }
   };
 

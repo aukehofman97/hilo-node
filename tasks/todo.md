@@ -296,3 +296,189 @@ Run once after first `docker-compose up`. GraphDB persists the repo in the named
 
 ### CLAUDE.md note
 CLAUDE.md still references `skills/` (project-level). The skills have been moved to `.claude/skills/`. This is fine — the content is the same, only the path changed.
+
+---
+
+## Events & Queue Design Refinement
+
+**Branch:** `feature/events-queue-refinement`
+**Spec:** `~/Downloads/events-queue-refinement-prompt.md`
+**Skill:** frontend-design
+
+### T1 — Setup
+- [ ] Create branch `feature/events-queue-refinement` off `develop`
+
+### T2 — Shared: `FilterChips` component
+- [ ] Create `ui/src/components/FilterChips.tsx`
+  - Props: `options: { label: string; value: string }[]`, `selected: string[]`, `onChange: (selected: string[]) => void`, `multiSelect?: boolean`
+  - Active chip: `bg-hilo-purple text-white rounded-full px-3 py-1 text-sm font-medium`
+  - Inactive chip: `bg-transparent border border-hilo-gray/30 text-hilo-dark/60 rounded-full px-3 py-1 text-sm font-medium hover:border-hilo-purple/50 dark:text-white/60`
+  - Chips animate in/out with `animate-scale-in` (150ms)
+  - TypeScript props, accessible (aria-pressed per chip)
+
+### T3 — Events: chip filter bar
+- [ ] Rewrite `FilterBar` in `Events.tsx`
+  - Replace `<select status>` with `FilterChips` for All/Published/Delivered/Failed/Dead-lettered
+  - Replace `<select eventType>` with "Type ▾" trigger chip → absolute-positioned popover with checkboxes, click-outside to close
+  - Replace `<select sourceNode>` with "Source ▾" trigger chip → same popover pattern
+  - Replace permanent search `<input>` with icon button that expands to borderless input; collapses on clear/blur
+  - Active filter summary row: removable chips (`bg-hilo-purple-50 text-hilo-purple-dark text-xs rounded-full`) + "Clear all" link
+  - Filter state: multi-select for status + eventTypes + sourceNodes (arrays, not single strings)
+
+### T4 — Events: quiet table header
+- [ ] Remove `bg-hilo-purple-50/60 dark:bg-hilo-purple/10` from header div
+- [ ] Use `bg-transparent border-b border-hilo-gray/20`
+- [ ] Header text: `font-body text-xs text-hilo-dark/40 dark:text-white/30 uppercase tracking-wider`
+
+### T5 — Events: improved footer
+- [ ] Show "N of M events · filtered" when filters active, "N events" when not
+- [ ] Right-align "Clear filters" link when filters active
+- [ ] Style: `text-xs text-hilo-dark/40 dark:text-white/30`
+
+### T6 — Queue: ghost Refresh button
+- [ ] Change Refresh button from `bg-hilo-purple-50 text-hilo-purple-dark` to ghost style
+- [ ] `bg-transparent border border-hilo-gray/30 text-hilo-dark/60 hover:border-hilo-purple/50 hover:text-hilo-purple rounded-hilo px-4 py-2 text-sm`
+- [ ] Dark: `dark:border-white/20 dark:text-white/60 dark:hover:border-hilo-purple-light/50 dark:hover:text-hilo-purple-light`
+
+### T7 — Queue: KpiCard null state improvement
+- [ ] When `loading` (parent passes prop): show skeleton pulse matching number size
+- [ ] When data is available but value is `null`: show "—" + `text-xs text-hilo-dark/30 dark:text-white/20` "No data" label below
+- [ ] When value is a number: count-up as before
+- [ ] Pass `loading` boolean down from `Queue` component to `KpiCard`
+
+### T8 — Queue: dead-letter error-type filter chips
+- [ ] Add filter chips above dead-letter list: `All` · `Timeout` · `Validation` · `Connection`
+- [ ] Classify by `error_reason` substring: timeout → Timeout, validation → Validation, retry/connection → Connection
+- [ ] Use `FilterChips` component, single-select (or "All" resets), filters mock list client-side
+- [ ] Only render chips when dead letters exist and count > 1
+
+### T9 — Queue: fix remaining md→lg grid
+- [ ] Line 492: `md:grid-cols-4` → `lg:grid-cols-4` in the main content (non-problem-state) KPI grid
+
+### T10 — Build and verify
+- [ ] `npx vite build` — clean build
+- [ ] Design checklist: neutral base, purple accents, whitespace, dark mode, accessible
+- [ ] Commit: `feat: events & queue design refinement — chip filters, quiet chrome`
+- [ ] Squash merge `feature/events-queue-refinement → develop → main`
+
+---
+
+## V2 — PR 1: Two-Tier Events + JWT Auth + Connection Management
+
+**Branch:** `feature/two-tier-events-and-connections` off `develop`
+**User stories:** US-1 through US-8
+
+### Branch setup
+- [ ] T-01 `git checkout develop && git pull && git checkout -b feature/two-tier-events-and-connections` (US-1)
+
+### Docker infrastructure (US-3)
+- [ ] T-02 Add named volume `hilo-api-data` to `docker-compose.yml`; mount at `/data` in the `api` service (US-3)
+
+### Config (US-2, US-3)
+- [ ] T-03 Add to `api/config.py`: `node_name`, `node_base_url`, `private_key_path` (default `/data/node.key`), `db_path` (default `/data/hilo.db`), `jwt_expiry_minutes` (default `5`), `jwt_audience`, `internal_key` (default `"dev"`) (US-2, US-3)
+
+### Key generation on startup (US-3)
+- [ ] T-04 Create `api/startup.py` — on startup, if `HILO_PRIVATE_KEY_PATH` does not exist, generate RSA-2048 key pair and write private key (PEM) to that path; expose public key PEM via a module-level getter; call from FastAPI lifespan in `main.py` (US-3)
+
+### Models (US-1, US-4)
+- [ ] T-05 Update `api/models/events.py` — add `subject: str` to `EventCreate`, remove `source_node`; add `EventNotification` model (`event_id`, `event_type`, `source_node`, `subject`, `created_at`, `data_url`) (US-1)
+- [ ] T-06 Create `api/models/connections.py` — `ConnectionRequest` (`node_id`, `name`, `base_url`, `public_key`), `ConnectionResponse` (`id`, `peer_node_id`, `peer_name`, `peer_base_url`, `peer_public_key`, `status`, `initiated_by`, `created_at`, `updated_at`), `NodeIdentity` (`node_id`, `name`, `base_url`, `public_key`, `version`) (US-4)
+
+### Dependencies — install first (US-2, US-8)
+- [ ] T-15 Add `PyJWT>=2.0` and `cryptography` to `api/requirements.txt`; add `httpx` to `api/requirements.txt` and `queue/requirements.txt` (for outbound HTTP calls) (US-2, US-8)
+
+### Services (US-2, US-4, US-5, US-6, US-7)
+- [ ] T-07 Create `api/services/jwt_service.py` — `sign_token(peer_node_id: str) -> str`: sign RS256 JWT (`iss=node_id`, `aud=peer_node_id`, `exp=now+jwt_expiry_minutes`); `verify_token(token: str) -> dict`: decode + verify RS256 using issuer's stored public key; `verify_internal(token: str) -> bool`: check against `HILO_INTERNAL_KEY` (US-2, US-7)
+- [ ] T-08 Create `api/services/connections.py` — SQLite init (`hilo_connections` table on startup); `get_all()`, `get_active_peers()`, `get_by_id(id)`, `get_by_peer_node_id(peer_node_id)`; `create_incoming(req: ConnectionRequest)`, `create_outgoing(peer_node_id, name, base_url)`, `accept(id)`, `reject(id)`, `suspend(id)`, `mark_accept_pending(id)`, `store_peer_key(id, public_key_pem)` (US-4, US-5, US-6)
+
+### Routes (US-1, US-2, US-3, US-4, US-5, US-6, US-7, US-8)
+- [ ] T-09 Create `api/routes/well_known.py` — `GET /.well-known/hilo-node` returns `NodeIdentity` (node_id from settings, name, base_url, public key PEM from `startup.py`, version `"1.0"`); no auth required (US-3, US-4)
+- [ ] T-10 Update `api/routes/events.py` — `POST /events`: stamp `source_node = settings.node_id`, build `EventNotification` (with `data_url = f"{settings.node_base_url}/events/{stored.id}"`), publish notification to queue; `GET /events/{id}`: add `Depends(require_jwt)` dependency that accepts RS256 JWT or `HILO_INTERNAL_KEY` bearer (US-1, US-2)
+- [ ] T-10b Update `api/services/queue.py` — add `publish_notification(notification: EventNotification) -> None` (publishes `EventNotification` JSON); remove or deprecate `publish_event(event: EventResponse)`; update the route in T-10 to call `publish_notification` (US-1)
+- [ ] T-11 Create `api/routes/connections.py` — `GET /connections`, `GET /connections/{peer_node_id}/token` (calls `jwt_service.sign_token`), `POST /connections/request` (calls `connections_service.create_incoming`, stores peer key), `POST /connections/{id}/accept` (calls `connections_service.accept`, then HTTP POST to peer's `/connections/accepted` with retry), `POST /connections/accepted` (marks connection active, fetches + stores peer public key from peer's `/.well-known/hilo-node`), `POST /connections/{id}/reject`, `POST /connections/{id}/suspend` (US-4, US-5, US-6, US-7)
+- [ ] T-12 Create `api/routes/bridge.py` — `POST /bridge/receive` accepts `EventNotification`, stores in GraphDB (`store_notification`), returns `200`; no auth, no re-forwarding (US-8)
+- [ ] T-13 Register all new routers in `api/main.py`: `well_known_router` (no prefix), `connections_router` (prefix `/connections`), `bridge_router` (no prefix) (US-1, US-4, US-8)
+
+### Consumer forwarding (US-8)
+- [ ] T-14a Add `api_url: str = "http://api:8000"` to `queue/config.py`; add `HILO_API_URL` env var to the `consumer` service in `docker-compose.yml`; add `depends_on: api: condition: service_healthy` to the `consumer` service (US-8)
+- [ ] T-14 Update `queue/consumer.py` — **fully replace** `process_event()` and `_insert_triples()` with `process_notification(body: bytes) -> bool`: parse JSON as `EventNotification`; call `GET {settings.api_url}/connections` via httpx to get active peer list; POST the notification to each peer's `{peer_base_url}/bridge/receive` via httpx; retry failed deliveries 3× with backoff (1s, 3s, 9s); return `False` after all retries exhausted so `on_message` nacks to dead-letter (US-8)
+
+### Consumer config and env files (US-8, US-12, US-13)
+- [ ] T-16 Update `.env.node-a`: add `HILO_NODE_NAME="HILO Node A"`, `HILO_NODE_BASE_URL=http://localhost:8000`; update `.env.node-b`: add `HILO_NODE_NAME="HILO Node B"`, `HILO_NODE_BASE_URL=http://localhost:9000` (US-4)
+
+### GraphDB service addition (US-8)
+- [ ] T-16b Add `store_notification(notification: EventNotification)` to `api/services/graphdb.py` — inserts the notification metadata as triples (event_id, event_type, source_node, subject, data_url, received_at) (US-8)
+
+### Tests (US-1, US-2)
+- [ ] T-22c Update `api/tests/test_events.py` — mock or bypass `require_jwt` dependency for all existing `GET /events/{id}` tests (use `app.dependency_overrides`); add new tests: 401 without `Authorization` header, 401 with expired JWT, 401 with unknown-key JWT, 200 with `HILO_INTERNAL_KEY` bearer; update `POST /events` tests to use new `EventCreate` shape (`subject` added, `source_node` removed) (US-1, US-2)
+
+### README update (US-1)
+- [ ] T-22d Update `README.md` quickstart curl example — add `"subject": "..."`, remove `"source_node": "..."` from the sample `POST /events` payload (US-1)
+
+### Verify PR 1 (US-1 through US-8)
+- [ ] T-17 `POST /events` with `{event_type, subject, triples}` → 201; queue shows notification (not full event); GraphDB stores triples (US-1)
+- [ ] T-18 `GET /events/{id}` without token → 401; with valid JWT → 200; with expired JWT → 401; with `HILO_INTERNAL_KEY` → 200 (US-2)
+- [ ] T-19 `GET /.well-known/hilo-node` → JSON with `node_id`, `public_key` (US-3)
+- [ ] T-20 Full connection handshake: Node B POSTs to Node A's `/connections/request` → Node A has `pending_incoming`; Node A accepts → callback to Node B → both show `active` (US-4, US-5, US-6)
+- [ ] T-21 `GET /connections/{peer}/token` → `{token, expires_at, peer_url}`; token accepted by peer's `GET /events/{id}` (US-7)
+- [ ] T-22 `POST /bridge/receive` with `EventNotification` → 200; stored in GraphDB; not re-forwarded (US-8)
+
+### Commit PR 1
+- [ ] T-22b Commit: `feat: two-tier events, RS256 JWT auth, connection management`; open PR `feature/two-tier-events-and-connections → develop`
+
+---
+
+## V2 — PR 2: Connections UI
+
+**Branch:** `feature/connections-ui` off `feature/two-tier-events-and-connections`
+**User stories:** US-9, US-10, US-11
+**Depends on:** PR 1 merged
+
+### Branch setup
+- [ ] T-23 `git checkout feature/two-tier-events-and-connections && git checkout -b feature/connections-ui` (US-9)
+
+### Types and API client (US-9, US-10, US-11)
+- [ ] T-24 Add `Connection`, `NodeIdentity`, `AccessToken` interfaces to `ui/src/types.ts` (US-9)
+- [ ] T-25 Create `ui/src/api/connections.ts` — `fetchConnections()`, `previewNode(url: string)`, `sendConnectionRequest(targetUrl: string)`, `acceptConnection(id: string)`, `rejectConnection(id: string)`, `getPeerToken(peerId: string)` (US-9, US-10, US-11)
+
+### Navigation (US-9)
+- [ ] T-26 Add "Connections" nav item with appropriate Lucide icon to `ui/src/components/TopBar.tsx` (or the active nav component); wire to `onNavigate("connections")` (US-9)
+
+### Connections page (US-9, US-10, US-11)
+- [ ] T-27 Create `ui/src/pages/Connections.tsx` with three sections:
+  - **Add connection**: URL text input + "Preview" button → fetches `/.well-known/hilo-node` → displays identity card (`node_id`, `name`, `base_url`, capabilities); "Send request" button; error state if URL unreachable
+  - **Pending — incoming**: list of `pending_incoming` connections with `node_id`, `name`, `base_url`; "Accept" + "Reject" buttons; "Resend acceptance" for `accept_pending` status
+  - **Active peers**: list of active connections; each card shows `node_id`, `name`, connection date; Bearer token with countdown + copy button (auto-refreshes at 30s remaining); peer's public key with "Refresh key" button; "View events" link
+  - Loading skeleton, error state, empty state for all sections (US-9, US-10, US-11)
+
+### Verify PR 2 (US-9, US-10, US-11)
+- [ ] T-28 Enter peer URL → preview card shows correct `node_id`, `name` (US-9)
+- [ ] T-29 Send request → pending outgoing section appears (US-9)
+- [ ] T-30 Accept incoming → peer moves to active section; token displayed (US-10)
+- [ ] T-31 Token countdown visible; token auto-refreshes before expiry; copied token is a valid JWT (US-11)
+
+### Commit PR 2
+- [ ] T-31b Commit: `feat: connections UI tab — peer discovery, handshake, token display`; open PR `feature/connections-ui → develop`
+
+---
+
+## V2 — PR 3: Node B Setup + End-to-End Test
+
+**Branch:** `feature/node-b-setup` off `develop` (after PR 1 and PR 2 merged)
+**User stories:** US-12, US-13
+
+### Branch setup
+- [ ] T-32 `git checkout develop && git pull && git checkout -b feature/node-b-setup` (US-12)
+
+### Node B (US-12)
+- [ ] T-33 Verify `.env.node-b` has correct values: `NODE_ID=node-b`, `GRAPHDB_REPO=hilo-b`, `HILO_NODE_NAME="HILO Node B"`, `HILO_NODE_BASE_URL=http://localhost:9000`, all ports shifted +1000 (US-12)
+- [ ] T-34 `docker-compose -p node-b --env-file .env.node-b up --build`; verify all five Node B containers reach healthy; `curl http://localhost:9000/health` → `{"status":"healthy"}`; `GET http://localhost:9000/.well-known/hilo-node` → `{node_id: "node-b"}` (US-12)
+
+### End-to-end test (US-13)
+- [ ] T-35 Connect A → B: open Node A UI Connections tab, enter `http://localhost:9000`, preview shows `node-b`; send request; open Node B UI Connections tab, accept; both UIs show active peer (US-13)
+- [ ] T-36 `POST http://localhost:8000/events` with `{event_type, subject, triples}`; verify Node A logs "Forwarded notification to node-b"; Node B logs "Bridge: received notification from node-a"; notification stored in Node B's GraphDB (US-13)
+- [ ] T-37 Get JWT from Node B's Connections tab (copy token for node-a); `curl -H "Authorization: Bearer <token>" http://localhost:8000/events/{id}` → 200 with full triples (US-13)
+- [ ] T-38 `POST http://localhost:9000/events` with a different payload; verify notification arrives at Node A; Node A's Events page shows events from both `node-a` and `node-b` (US-13)
+
+### Commit PR 3
+- [ ] T-39 Commit: `feat: node-b setup and E2E inter-node event exchange verified`; open PR `feature/node-b-setup → develop → main` (US-12, US-13)

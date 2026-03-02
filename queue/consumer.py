@@ -18,6 +18,7 @@ DLX_EXCHANGE = "hilo.events.dlx"
 DLX_QUEUE = "hilo.events.dead"
 NODE_QUEUE = f"hilo.events.{settings.node_id}"
 MAX_RETRIES = 5
+FORWARD_RETRIES = 3
 
 
 def get_connection(max_attempts: int = 10, delay: float = 3.0) -> pika.BlockingConnection:
@@ -51,51 +52,78 @@ def ensure_infrastructure(channel: pika.adapters.blocking_connection.BlockingCha
     )
 
 
-def _graphdb_update_endpoint() -> str:
-    if settings.graphdb_backend == "fuseki":
-        return f"{settings.graphdb_url}/{settings.graphdb_repository}/update"
-    return f"{settings.graphdb_url}/repositories/{settings.graphdb_repository}/statements"
-
-
-def _insert_triples(triples: str) -> None:
-    if settings.graphdb_backend == "fuseki":
-        endpoint = f"{settings.graphdb_url}/{settings.graphdb_repository}/data"
-        httpx.post(
-            endpoint,
-            content=triples.encode(),
-            headers={"Content-Type": "text/turtle"},
-            timeout=10,
-        ).raise_for_status()
-    else:
-        sparql_prefixes, body_lines = [], []
-        for line in triples.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("@prefix"):
-                sparql_prefixes.append("PREFIX" + stripped[7:].rstrip(" ."))
-            else:
-                body_lines.append(line)
-        insert_query = "\n".join(sparql_prefixes) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}}"
-        httpx.post(
-            _graphdb_update_endpoint(),
-            data={"update": insert_query},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=10,
-        ).raise_for_status()
-
-
-def process_event(body: bytes) -> bool:
+def _get_active_peers() -> list[dict]:
+    """Fetch active connected peers from the API. Returns list of peer dicts."""
     try:
-        event = json.loads(body)
-        logger.info("Processing event: %s (type=%s)", event.get("id"), event.get("event_type"))
-        triples = event.get("triples", "")
-        if not triples:
-            logger.warning("Event has no triples, skipping INSERT")
-            return True
-        _insert_triples(triples)
-        logger.info("Triples stored for event %s", event.get("id"))
-        return True
+        resp = httpx.get(
+            f"{settings.api_url}/connections",
+            timeout=5,
+        )
+        resp.raise_for_status()
+        connections = resp.json()
+        return [c for c in connections if c.get("status") == "active"]
     except Exception as exc:
-        logger.error("Failed to process event: %s", exc)
+        logger.warning("Could not fetch peer list from API: %s", exc)
+        return []
+
+
+def _forward_to_peer(peer_base_url: str, notification: dict) -> bool:
+    """POST notification to peer's /bridge/receive. Returns True on success."""
+    url = f"{peer_base_url}/bridge/receive"
+    delay = 1.0
+    for attempt in range(1, FORWARD_RETRIES + 1):
+        try:
+            resp = httpx.post(url, json=notification, timeout=10)
+            if resp.is_success:
+                logger.info("Forwarded notification to %s", peer_base_url)
+                return True
+            logger.warning(
+                "Forward attempt %d/%d to %s returned %d",
+                attempt, FORWARD_RETRIES, peer_base_url, resp.status_code,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Forward attempt %d/%d to %s failed: %s",
+                attempt, FORWARD_RETRIES, peer_base_url, exc,
+            )
+        if attempt < FORWARD_RETRIES:
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+
+    logger.error("All %d forward attempts to %s failed — moving to dead-letter", FORWARD_RETRIES, peer_base_url)
+    return False
+
+
+def process_notification(body: bytes) -> bool:
+    """Parse an EventNotification and forward it to all active connected peers.
+
+    Replaces the old process_event() — there are no triples in the queue message.
+    The full event stays on the source node; peers receive only the lightweight notification.
+    """
+    try:
+        notification = json.loads(body)
+        event_id = notification.get("event_id")
+        event_type = notification.get("event_type")
+        logger.info("Processing notification: event_id=%s type=%s", event_id, event_type)
+
+        peers = _get_active_peers()
+        if not peers:
+            logger.info("No active peers — notification %s consumed without forwarding", event_id)
+            return True
+
+        all_ok = True
+        for peer in peers:
+            peer_url = peer.get("peer_base_url", "")
+            if not peer_url:
+                continue
+            ok = _forward_to_peer(peer_url, notification)
+            if not ok:
+                all_ok = False
+
+        return all_ok
+
+    except Exception as exc:
+        logger.error("Failed to process notification: %s", exc)
         return False
 
 
@@ -110,7 +138,7 @@ def on_message(channel, method, properties, body):
             time.sleep(delay)
             delay = min(delay * 2, 30)
 
-        success = process_event(body)
+        success = process_notification(body)
         retry_count += 1
 
     if success:
@@ -131,7 +159,7 @@ def main():
     ensure_infrastructure(channel)
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=NODE_QUEUE, on_message_callback=on_message)
-    logger.info("Consumer started for %s. Waiting for events...", settings.node_id)
+    logger.info("Consumer started for %s. Waiting for notifications...", settings.node_id)
     channel.start_consuming()
 
 
