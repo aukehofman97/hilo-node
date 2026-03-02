@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Zap,
@@ -36,6 +36,15 @@ const navItems: NavItem[] = [
 export default function TopBar({ activePage, onNavigate }: TopBarProps) {
   const { theme, toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [nodeId, setNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+    fetch(`${apiUrl}/.well-known/hilo-node`)
+      .then((r) => r.json())
+      .then((d) => setNodeId(d.node_id))
+      .catch(() => {});
+  }, []);
 
   const handleNavigate = (id: string) => {
     onNavigate(id);
@@ -95,7 +104,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
               </span>
-              <span className="text-xs font-medium text-green-700 dark:text-green-400">node-a</span>
+              <span className="text-xs font-medium text-green-700 dark:text-green-400">{nodeId ?? "…"}</span>
             </div>
 
             {/* Dark mode toggle */}
