@@ -158,6 +158,22 @@ def insert_turtle(triples: str) -> None:
             raise
 
 
+def _sparql_update(sparql: str) -> None:
+    """Execute a SPARQL UPDATE against the configured triple store."""
+    endpoint = _sparql_update_endpoint()
+    try:
+        resp = httpx.post(
+            endpoint,
+            data={"update": sparql},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.error("SPARQL UPDATE failed: %s — %s", exc.response.status_code, exc.response.text)
+        raise
+
+
 def query_data(sparql: str) -> dict:
     endpoint = _sparql_endpoint()
     try:
@@ -188,13 +204,15 @@ def get_events(
 
     sparql = f"""
 {PREFIXES}
-SELECT ?eventId ?sourceNode ?eventType ?subject ?createdAt WHERE {{
+SELECT ?eventId ?sourceNode ?eventType ?subject ?createdAt ?hasLocalCopy WHERE {{
     ?event a hilo:Event ;
            hilo:eventId ?eventId ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
     OPTIONAL {{ ?event hilo:subject ?subject . }}
+    OPTIONAL {{ ?event hilo:triplesPayload ?tp . }}
+    BIND(BOUND(?tp) AS ?hasLocalCopy)
     {filter_block}
 }}
 ORDER BY DESC(?createdAt)
@@ -214,6 +232,7 @@ LIMIT {limit}
                     binding["createdAt"]["value"].replace("Z", "+00:00")
                 ),
                 links={"self": f"/events/{binding['eventId']['value']}"},
+                has_local_copy=binding.get("hasLocalCopy", {}).get("value", "false") == "true",
             )
         )
     return events
@@ -248,4 +267,33 @@ SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload ?dataUrl WHERE
         triples=b.get("triplesPayload", {}).get("value", ""),
         created_at=datetime.fromisoformat(b["createdAt"]["value"].replace("Z", "+00:00")),
         links=links,
+        has_local_copy=bool(b.get("triplesPayload", {}).get("value")),
     )
+
+
+def import_event_triples(event_id: str, triples: str) -> None:
+    """Import RDF triples for a peer notification into the local triple store.
+
+    Write order (critical):
+      1. insert_turtle — idempotent; safe to retry
+      2. SPARQL UPDATE metadata — only after triples confirmed stored
+    If (2) fails, event stays as 'received' and user can retry cleanly.
+    """
+    # Step 1: Insert the actual RDF triples first (idempotent on retry)
+    insert_turtle(triples)
+
+    # Step 2: Add hilo:triplesPayload to the existing event metadata subject
+    triples_escaped = (
+        triples
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+    sparql = f"""
+PREFIX hilo: <http://hilo.semantics.io/ontology/>
+INSERT DATA {{
+    <http://hilo.semantics.io/events/meta/{event_id}> hilo:triplesPayload "{triples_escaped}" .
+}}
+"""
+    _sparql_update(sparql)
