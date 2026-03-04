@@ -138,7 +138,7 @@ services:
     ports:
       - "${UI_PORT:-3000}:3000"
     environment:
-      REACT_APP_API_URL: http://localhost:${API_PORT:-8000}
+      VITE_API_URL: http://localhost:${API_PORT:-8000}
     networks:
       - hilo-net
     depends_on:
