@@ -596,7 +596,7 @@ export default function Events({ onNavigate }: EventsProps) {
   const newIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
     fetch(`${apiUrl}/.well-known/hilo-node`)
       .then((r) => r.json())
       .then((d) => setLocalNodeId(d.node_id))

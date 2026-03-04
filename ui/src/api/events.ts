@@ -1,4 +1,4 @@
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export interface Event {
   id: string;
@@ -31,7 +31,7 @@ export async function fetchEvents(params: FetchEventsParams | number = {}): Prom
 }
 
 export async function fetchEvent(id: string): Promise<Event> {
-  const internalKey = process.env.REACT_APP_INTERNAL_KEY || "dev";
+  const internalKey = import.meta.env.VITE_INTERNAL_KEY || "dev";
   const resp = await fetch(`${API_URL}/events/${id}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${internalKey}` },
   });
@@ -41,7 +41,7 @@ export async function fetchEvent(id: string): Promise<Event> {
 
 /** Import fetched RDF triples into the local triple store via POST /events/{id}/import. */
 export async function importEvent(id: string, triples: string): Promise<{ status: string; id: string }> {
-  const internalKey = process.env.REACT_APP_INTERNAL_KEY || "dev";
+  const internalKey = import.meta.env.VITE_INTERNAL_KEY || "dev";
   const resp = await fetch(`${API_URL}/events/${id}/import`, {
     method: "POST",
     headers: {

@@ -39,7 +39,7 @@ export default function TopBar({ activePage, onNavigate }: TopBarProps) {
   const [nodeId, setNodeId] = useState<string | null>(null);
 
   useEffect(() => {
-    const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
     fetch(`${apiUrl}/.well-known/hilo-node`)
       .then((r) => r.json())
       .then((d) => setNodeId(d.node_id))
