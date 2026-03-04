@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import settings
-from models.events import EventCreate, EventNotification, EventResponse
+from models.events import EventCreate, EventImportRequest, EventNotification, EventResponse
 from services import graphdb, queue as queue_service
 from services.jwt_service import require_jwt
 
@@ -53,3 +53,34 @@ def get_event(event_id: str, _token: dict = Depends(require_jwt)):
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
+
+
+@router.post("/{event_id}/import", status_code=200)
+def import_event(event_id: str, body: EventImportRequest, token_payload: dict = Depends(require_jwt)):
+    """Import fetched RDF triples from a peer event into the local triple store.
+
+    Local UI only — peer JWTs are rejected (C2).
+    Check sequence: 404 → 400 → 409 → 200.
+    """
+    # C2: import is local-UI only — reject peer JWTs
+    if token_payload.get("sub") != "internal":
+        raise HTTPException(status_code=403, detail="Import endpoint is local-UI only")
+
+    # 404 — event not found
+    event = graphdb.get_event_by_id(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # 400 — not a peer notification (locally-originated events have no hilo:dataUrl)
+    if "data" not in event.links:
+        raise HTTPException(
+            status_code=400,
+            detail="This event was originated locally — import is only valid for peer notifications",
+        )
+
+    # 409 — already imported
+    if event.has_local_copy:
+        raise HTTPException(status_code=409, detail="Event already imported")
+
+    graphdb.import_event_triples(event_id, body.triples)
+    return {"status": "imported", "id": event_id}

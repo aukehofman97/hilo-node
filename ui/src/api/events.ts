@@ -7,6 +7,7 @@ export interface Event {
   created_at: string;
   triples?: string;
   links?: Record<string, string>;
+  has_local_copy?: boolean;
 }
 
 export interface FetchEventsParams {
@@ -35,6 +36,24 @@ export async function fetchEvent(id: string): Promise<Event> {
     headers: { Accept: "application/json", Authorization: `Bearer ${internalKey}` },
   });
   if (!resp.ok) throw new Error(`fetchEvent failed (${resp.status})`);
+  return resp.json();
+}
+
+/** Import fetched RDF triples into the local triple store via POST /events/{id}/import. */
+export async function importEvent(id: string, triples: string): Promise<{ status: string; id: string }> {
+  const internalKey = process.env.REACT_APP_INTERNAL_KEY || "dev";
+  const resp = await fetch(`${API_URL}/events/${id}/import`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${internalKey}`,
+    },
+    body: JSON.stringify({ triples }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: `Import failed (${resp.status})` }));
+    throw new Error(err.detail || `Import failed (${resp.status})`);
+  }
   return resp.json();
 }
 

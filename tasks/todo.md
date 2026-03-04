@@ -482,3 +482,55 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 
 ### Commit PR 3
 - [ ] T-39 Commit: `feat: node-b setup and E2E inter-node event exchange verified`; open PR `feature/node-b-setup → develop → main` (US-12, US-13)
+
+---
+
+## feature/local-event-import
+
+**Branch:** `feature/local-event-import` off `main`
+**User stories:** US-14, US-15, US-16
+**Architecture ref:** `tasks/architecture-local-import.md`
+
+### Branch setup
+- [x] T-40 `git checkout main && git pull && git checkout -b feature/local-event-import` (US-14)
+
+### Backend — models (US-15, US-16)
+- [x] T-41 Update `api/models/events.py`:
+  - Add `EventImportRequest(BaseModel)` with `triples: str`
+  - Add `has_local_copy: bool = False` field to `EventResponse` (US-15, US-16)
+
+### Backend — service (US-15, US-16)
+- [x] T-42 Update `api/services/graphdb.py`:
+  - Add `import_event_triples(event_id: str, triples: str) -> None`: (1) `insert_turtle(triples)` first, (2) SPARQL INSERT to add `hilo:triplesPayload "{escaped}"` to the existing event subject (triples first — write order is critical per architecture)
+  - Update `get_events()` SPARQL: add `OPTIONAL { ?event hilo:triplesPayload ?tp . } BIND(BOUND(?tp) AS ?hasLocalCopy)`, set `has_local_copy = binding["hasLocalCopy"]["value"] == "true"` in each `EventResponse`
+  - Update `get_event_by_id()` SPARQL: `has_local_copy = bool(b.get("triplesPayload", {}).get("value"))` (US-15, US-16)
+
+### Backend — route (US-15)
+- [x] T-43 Add `POST /events/{event_id}/import` to `api/routes/events.py`:
+  - Requires `Depends(require_jwt)` + `token_payload["sub"] == "internal"` check (C2 — local UI only)
+  - Check sequence: 404 (not found) → 400 (no hilo:dataUrl) → 409 (already imported) → `graphdb.import_event_triples()` → `{"status": "imported", "id": event_id}` (US-15)
+
+### Frontend — API client (US-15)
+- [x] T-44 Update `ui/src/api/events.ts`:
+  - Added `has_local_copy?: boolean` to the `Event` interface
+  - Added `importEvent(id, triples)` — `POST /events/{id}/import` with `Bearer dev` header (US-15)
+
+### Frontend — UI (US-14, US-15, US-16)
+- [x] T-45 Update `ui/src/pages/Events.tsx`:
+  - Split `remoteError` → `fetchError` + `storeError` (C1 from plan review)
+  - Added `storing: boolean` state; reset `fetchError` + `storeError` on `selectedId` change
+  - Added `handleStoreLocally()`: calls `importEvent()` then `fetchEvent()` to confirm; updates `detail`
+  - "Store locally" button shown when `detail.triples` non-empty AND `!detail.has_local_copy`
+  - Added `"imported"` to `EventStatus`; green badge styles in `STATUS_STYLES` and `STATUS_DOT`
+  - Badge derivation: `published` | `imported` | `received` everywhere (US-14, US-15, US-16)
+
+### Verify (US-14, US-15, US-16)
+- [ ] T-46 Manual E2E verification:
+  1. On Node B Events Monitor, open a `received` event → "Fetch full event from node-a" → triples appear → "Store locally" button appears
+  2. Click "Store locally" → button shows spinner → status badge changes to `imported` in both detail panel and list row
+  3. Close panel and reopen same event → badge still shows `imported`; button does not appear
+  4. `curl http://localhost:9000/events/{id}` with `Bearer dev` → `has_local_copy: true` in response
+  5. SPARQL query on Fuseki `hilo-b` dataset confirms the RDF triples are present (US-15, US-16)
+
+### Commit (US-14, US-15, US-16)
+- [ ] T-47 Commit: `feat: local import of remote event triples`; merge `feature/local-event-import → main` (US-14, US-15, US-16)

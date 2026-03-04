@@ -256,3 +256,65 @@
 **Linked tasks:** T-35, T-36, T-37, T-38, T-39
 **Architecture ref:** Proposed Solution — PR 3; V4 Upgrade Path
 **Priority:** Must
+
+---
+
+## feature/local-event-import
+
+---
+
+### US-14: "Store locally" button appears after fetching remote triples
+
+**As a** node operator on Node B
+**I want** a "Store locally" button to appear in the event detail panel after I fetch full triples from the source node
+**So that** I can explicitly choose whether to persist the data — fetch and import are separate decisions
+
+**Acceptance criteria:**
+- [ ] After `handleFetchFromSource` completes with non-empty `detail.triples`, a "Store locally" button is visible in the detail panel
+- [ ] If `detail.has_local_copy === true` (already imported), the button does not appear
+- [ ] When `selectedId` changes (user opens a different event), `stored` state resets so the button returns to its initial condition
+- [ ] The button is disabled during the store operation and shows a loading indicator
+
+**Linked tasks:** T-40, T-45
+**Architecture ref:** Tech Decisions — Store trigger; Endpoint Design — button visibility rule
+**Priority:** Must
+
+---
+
+### US-15: Import fetched triples into the local triple store
+
+**As a** node operator on Node B
+**I want** clicking "Store locally" to persist the fetched triples to my local Fuseki dataset
+**So that** I can query and explore peer event data via SPARQL and the Data Explorer without the source node being available
+
+**Acceptance criteria:**
+- [ ] `POST /events/{id}/import` with `{triples: "..."}` and `Bearer dev` header returns `200` with `{status: "imported", id: "..."}`
+- [ ] After import, the event in Fuseki has `hilo:triplesPayload` added to the existing event subject; `hilo:dataUrl` is preserved
+- [ ] After import, the actual RDF triples are in the Fuseki dataset and returnable by SPARQL SELECT
+- [ ] `POST /events/{id}/import` on a non-existent event returns `404`
+- [ ] `POST /events/{id}/import` on a locally-originated event (no `hilo:dataUrl`) returns `400`
+- [ ] `POST /events/{id}/import` on an event that is already imported returns `409`
+- [ ] If the first write (triples insert) succeeds but the second write (metadata update) fails, the event still shows as `received` (not `imported`) so the user can retry
+
+**Linked tasks:** T-41, T-42, T-43, T-44, T-45, T-46
+**Architecture ref:** Endpoint Design; Tech Decisions — Write order; Components Affected
+**Priority:** Must
+
+---
+
+### US-16: "imported" status badge for locally-stored peer events
+
+**As a** node operator
+**I want** peer events that have been imported to show a distinct "imported" badge (green) in both the event list and detail panel
+**So that** I can see at a glance which peer events are available locally versus only as notifications
+
+**Acceptance criteria:**
+- [ ] Events originated on this node show `published` badge (purple)
+- [ ] Events received from peers that have NOT been imported show `received` badge (blue)
+- [ ] Events received from peers that HAVE been imported show `imported` badge (green)
+- [ ] Badge derivation uses `source_node !== localNodeId && event.has_local_copy` — no hardcoded node names
+- [ ] After a successful import in the detail panel, the badge updates in both the detail panel and the event list row without a full page reload
+
+**Linked tasks:** T-41, T-42, T-43, T-45
+**Architecture ref:** Status Badge Derivation table; Tech Decisions — `has_local_copy: bool`
+**Priority:** Must

@@ -9,11 +9,12 @@ import {
   AlertCircle,
   ArrowRight,
   ChevronDown,
+  Download,
   Search,
   X,
   Zap,
 } from "lucide-react";
-import { fetchEvents, fetchEvent, fetchRemoteEvent, Event } from "../api/events";
+import { fetchEvents, fetchEvent, fetchRemoteEvent, importEvent, Event } from "../api/events";
 import { getToken } from "../api/connections";
 import FilterChips from "../components/FilterChips";
 
@@ -54,12 +55,13 @@ function shortenUri(uri: string): string {
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-type EventStatus = "published" | "received" | "delivered" | "failed" | "dead-lettered";
+type EventStatus = "published" | "received" | "imported" | "delivered" | "failed" | "dead-lettered";
 
 const STATUS_STYLES: Record<EventStatus, string> = {
   published:
     "bg-hilo-purple-50 dark:bg-hilo-purple/15 text-hilo-purple-dark dark:text-hilo-purple-light",
   received: "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
+  imported: "bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400",
   delivered: "bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400",
   failed: "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400",
   "dead-lettered": "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
@@ -68,6 +70,7 @@ const STATUS_STYLES: Record<EventStatus, string> = {
 const STATUS_DOT: Record<EventStatus, string> = {
   published: "bg-hilo-purple",
   received: "bg-blue-500",
+  imported: "bg-green-500",
   delivered: "bg-green-500",
   failed: "bg-red-500",
   "dead-lettered": "bg-amber-400",
@@ -134,14 +137,17 @@ interface DetailPanelProps {
   detail: Event | null;
   loadingDetail: boolean;
   fetchingRemote: boolean;
-  remoteError: string | null;
+  fetchError: string | null;
+  storing: boolean;
+  storeError: string | null;
   localNodeId: string | null;
   onClose: () => void;
   onNavigate: (page: string) => void;
   onFetchFromSource: () => void;
+  onStoreLocally: () => void;
 }
 
-function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError, localNodeId, onClose, onNavigate, onFetchFromSource }: DetailPanelProps) {
+function DetailPanel({ event, detail, loadingDetail, fetchingRemote, fetchError, storing, storeError, localNodeId, onClose, onNavigate, onFetchFromSource, onStoreLocally }: DetailPanelProps) {
   return (
     <div className="animate-slide-in-right glass rounded-hilo shadow-hilo border border-[var(--border)] flex flex-col h-full overflow-hidden">
       <div className="flex items-start justify-between p-4 border-b border-[var(--border)]">
@@ -172,7 +178,13 @@ function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError
             <span className="text-[var(--text)] font-mono break-all">{value}</span>
           </div>
         ))}
-        <StatusBadge status={event.source_node === localNodeId ? "published" : "received"} />
+        <StatusBadge status={
+          event.source_node === localNodeId
+            ? "published"
+            : event.has_local_copy
+            ? "imported"
+            : "received"
+        } />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -190,7 +202,25 @@ function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError
             ))}
           </div>
         ) : detail?.triples ? (
-          <TurtleView raw={detail.triples} />
+          <>
+            <TurtleView raw={detail.triples} />
+            {!detail.has_local_copy && (
+              <div className="space-y-2">
+                <button
+                  onClick={onStoreLocally}
+                  disabled={storing}
+                  className="flex items-center gap-2 px-3 py-2 rounded-hilo text-xs font-semibold bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-60"
+                >
+                  {storing
+                    ? <><Download size={13} className="animate-pulse" /> Storing…</>
+                    : <><Download size={13} /> Store locally</>}
+                </button>
+                {storeError && (
+                  <p className="text-xs text-red-500 dark:text-red-400">{storeError}</p>
+                )}
+              </div>
+            )}
+          </>
         ) : detail?.links?.data ? (
           <div className="space-y-3">
             <p className="text-xs text-[var(--text-muted)]">
@@ -205,8 +235,8 @@ function DetailPanel({ event, detail, loadingDetail, fetchingRemote, remoteError
                 ? <><ArrowRight size={13} className="animate-pulse" /> Fetching…</>
                 : <><ArrowRight size={13} /> Fetch full event from {detail.source_node}</>}
             </button>
-            {remoteError && (
-              <p className="text-xs text-red-500 dark:text-red-400">{remoteError}</p>
+            {fetchError && (
+              <p className="text-xs text-red-500 dark:text-red-400">{fetchError}</p>
             )}
           </div>
         ) : (
@@ -558,7 +588,9 @@ export default function Events({ onNavigate }: EventsProps) {
   const [detail, setDetail] = useState<Event | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [fetchingRemote, setFetchingRemote] = useState(false);
-  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [storing, setStoring] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
   const [localNodeId, setLocalNodeId] = useState<string | null>(null);
   const prevIds = useRef<Set<string>>(new Set());
   const newIds = useRef<Set<string>>(new Set());
@@ -594,9 +626,10 @@ export default function Events({ onNavigate }: EventsProps) {
   }, [load]);
 
   useEffect(() => {
-    if (!selectedId) { setDetail(null); setRemoteError(null); return; }
+    if (!selectedId) { setDetail(null); setFetchError(null); setStoreError(null); return; }
     setLoadingDetail(true);
-    setRemoteError(null);
+    setFetchError(null);
+    setStoreError(null);
     fetchEvent(selectedId)
       .then(setDetail)
       .catch(() => setDetail(null))
@@ -606,15 +639,33 @@ export default function Events({ onNavigate }: EventsProps) {
   const handleFetchFromSource = async () => {
     if (!detail?.links?.data || !detail.source_node) return;
     setFetchingRemote(true);
-    setRemoteError(null);
+    setFetchError(null);
     try {
       const tokenResp = await getToken(detail.source_node);
       const full = await fetchRemoteEvent(detail.links.data, tokenResp.token);
-      setDetail(full);
+      // has_local_copy from the source node's response reflects *their* store status,
+      // not ours — we know we don't have a local copy yet or we wouldn't be fetching
+      setDetail({ ...full, has_local_copy: false });
     } catch (e: any) {
-      setRemoteError(e.message);
+      setFetchError(e.message);
     } finally {
       setFetchingRemote(false);
+    }
+  };
+
+  const handleStoreLocally = async () => {
+    if (!selectedId || !detail?.triples) return;
+    setStoring(true);
+    setStoreError(null);
+    try {
+      await importEvent(selectedId, detail.triples);
+      // Re-fetch from local API to confirm storage and update has_local_copy
+      const updated = await fetchEvent(selectedId);
+      setDetail(updated);
+    } catch (e: any) {
+      setStoreError(e.message);
+    } finally {
+      setStoring(false);
     }
   };
 
@@ -759,7 +810,13 @@ export default function Events({ onNavigate }: EventsProps) {
                         : "hover:bg-hilo-purple-50/50 dark:hover:bg-white/5"
                     } ${isNew ? "animate-slide-in-top" : ""}`}
                   >
-                    <StatusBadge status={ev.source_node === localNodeId ? "published" : "received"} />
+                    <StatusBadge status={
+                      ev.source_node === localNodeId
+                        ? "published"
+                        : ev.has_local_copy
+                        ? "imported"
+                        : "received"
+                    } />
                     <span className="text-sm text-[var(--text)] truncate">
                       {toSentenceCase(ev.event_type)}
                     </span>
@@ -807,11 +864,14 @@ export default function Events({ onNavigate }: EventsProps) {
               detail={detail}
               loadingDetail={loadingDetail}
               fetchingRemote={fetchingRemote}
-              remoteError={remoteError}
+              fetchError={fetchError}
+              storing={storing}
+              storeError={storeError}
               localNodeId={localNodeId}
               onClose={() => setSelectedId(null)}
               onNavigate={onNavigate}
               onFetchFromSource={handleFetchFromSource}
+              onStoreLocally={handleStoreLocally}
             />
           </div>
         )}
@@ -836,11 +896,14 @@ export default function Events({ onNavigate }: EventsProps) {
               detail={detail}
               loadingDetail={loadingDetail}
               fetchingRemote={fetchingRemote}
-              remoteError={remoteError}
+              fetchError={fetchError}
+              storing={storing}
+              storeError={storeError}
               localNodeId={localNodeId}
               onClose={() => setSelectedId(null)}
               onNavigate={onNavigate}
               onFetchFromSource={handleFetchFromSource}
+              onStoreLocally={handleStoreLocally}
             />
           </div>
         </>
