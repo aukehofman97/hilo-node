@@ -12,6 +12,8 @@
 
 **Detection:** Grep for `process\.env` in `ui/src` before merging any frontend PR. If found, migrate to `import.meta.env.VITE_*`.
 
+**Corollary — always audit infrastructure files too:** When renaming any env var, grep `docker-compose.yml` (and any `.env.*` files) for the old name and update them in the same commit. Env var renames that only touch `src/` are incomplete — the container that injects the value is just as important as the code that reads it. Missing this breaks running deployments silently (no error, wrong default used instead).
+
 ---
 
 ## 2026-03-01
