@@ -290,3 +290,18 @@ def resend_acceptance(connection_id: str) -> Optional[ConnectionResponse]:
         conn = get_connection_by_id(connection_id)
         _send_acceptance_callback(conn)
     return get_connection_by_id(connection_id)
+
+
+def delete_connection(peer_node_id: str) -> bool:
+    """Hard-delete a connection by peer node ID. Idempotent — no error if not found."""
+    with _conn() as db:
+        cursor = db.execute(
+            "DELETE FROM connections WHERE peer_node_id = ?", (peer_node_id,)
+        )
+        db.commit()
+    deleted = cursor.rowcount > 0
+    if deleted:
+        logger.info("Connection with %s deleted", peer_node_id)
+    else:
+        logger.info("disconnect: no connection found for %s — nothing to delete", peer_node_id)
+    return deleted

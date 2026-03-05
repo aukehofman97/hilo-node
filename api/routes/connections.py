@@ -160,3 +160,43 @@ def resend_acceptance(connection_id: str):
     if not updated:
         raise HTTPException(status_code=404, detail="Connection not found or not in accept_pending state")
     return updated
+
+
+@router.post("/{peer_node_id}/disconnect", status_code=200)
+def disconnect(peer_node_id: str):
+    """Remove a connection and notify the peer.
+
+    Notifies the peer via POST /connections/{this_node_id}/disconnected, then hard-deletes
+    locally regardless of whether the peer is reachable.
+    """
+    import httpx
+
+    conn = conn_svc.get_connection_by_peer(peer_node_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    # Notify peer — fire-and-forget, don't block on failure
+    try:
+        url = f"{conn.peer_base_url}/connections/{settings.node_id}/disconnected"
+        resp = httpx.post(url, timeout=5)
+        if not resp.is_success:
+            logger.warning("Peer %s returned %d on disconnected notify", peer_node_id, resp.status_code)
+        else:
+            logger.info("Peer %s notified of disconnect", peer_node_id)
+    except Exception as exc:
+        logger.warning("Could not notify peer %s of disconnect: %s — deleting locally anyway", peer_node_id, exc)
+
+    conn_svc.delete_connection(peer_node_id)
+    return {"status": "disconnected", "peer": peer_node_id}
+
+
+@router.post("/{node_id}/disconnected", status_code=200)
+def peer_disconnected(node_id: str):
+    """Peer notifies us that they have removed the connection.
+
+    Intentionally unauthenticated in V2 — consistent with /bridge/receive.
+    Idempotent: returns 200 even if no connection exists.
+    V3: add sender JWT verification.
+    """
+    conn_svc.delete_connection(node_id)
+    return {"status": "ok"}
