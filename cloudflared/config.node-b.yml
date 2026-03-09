@@ -1,0 +1,20 @@
+# Cloudflare Tunnel config for Node B
+# No secrets in this file — safe to commit.
+#
+# Setup steps:
+#   1. Create a tunnel in the Cloudflare Zero Trust dashboard (Networks → Tunnels)
+#   2. Name it "hilo-node-b", download credentials JSON
+#   3. Place credentials at cloudflared/credentials.node-b.json (git-ignored)
+#   4. Replace <TUNNEL-ID-NODE-B> below with the tunnel ID from the dashboard
+#   5. Add public hostname in Cloudflare dashboard:
+#        node-b.hilosemantics.com → http://api:8000
+#
+# Run: docker-compose -p node-b --env-file .env.node-b up --build
+
+tunnel: <TUNNEL-ID-NODE-B>
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: node-b.hilosemantics.com
+    service: http://api:8000
+  - service: http_status:404

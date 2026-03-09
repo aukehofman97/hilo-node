@@ -42,3 +42,6 @@ ui/dist/
 
 # GraphDB local data (volume-managed in production)
 graphdb/data/*.ttl.bak
+
+# Cloudflare Tunnel credentials — contain secrets, never commit
+cloudflared/credentials.*.json
