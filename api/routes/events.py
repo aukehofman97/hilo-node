@@ -29,6 +29,8 @@ def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
         data_url=f"{settings.node_base_url}/events/{stored.id}",
     )
 
+    stored.data_url = notification.data_url
+
     try:
         queue_service.publish_notification(notification)
     except Exception as exc:

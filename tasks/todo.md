@@ -580,13 +580,13 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 - [x] T-59 Add "Cloudflare Tunnel setup" section to `README.md` covering: create tunnel in dashboard, download credentials JSON, place at `cloudflared/credentials.node-a.json`, set tunnel ID in config file, add public hostname in dashboard, note that `--env-file` is required, note credentials are git-ignored (US-9)
 
 ### Verify (US-10)
-- [ ] T-60 Start Node A: `docker-compose --env-file .env.node-a --profile tunnel up --build` — confirm all 6 containers healthy including cloudflared (US-10)
+- [x] T-60 Start Node A: `docker-compose --env-file .env.node-a --profile tunnel up --build` — confirm all 6 containers healthy including cloudflared (US-10)
   - Prereq: credentials.node-a.json placed, tunnel ID set in config.node-a.yml, public hostname configured in Cloudflare dashboard
-- [ ] T-61 `POST /events` with `Bearer dev` → `data_url` in response equals `https://node-a.hilosemantics.com/events/{id}` (US-10)
-- [ ] T-62 `POST /events` without auth → `401` (US-10)
-- [ ] T-63 `GET /events` without auth → `401` (US-10)
-- [ ] T-64 Start Node B: `docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build` — confirm all 6 containers healthy (US-10)
-- [ ] T-65 Establish connection A↔B; send event from Node A; open Node B UI → "Fetch full event" resolves without "load failed" and returns triples (US-10)
+- [x] T-61 `POST /events` with `Bearer dev` → `data_url` in response equals `https://node-a.hilosemantics.com/events/{id}` (US-10)
+- [x] T-62 `POST /events` without auth → `401` (US-10)
+- [x] T-63 `GET /events` without auth → `401` (US-10)
+- [x] T-64 Start Node B: `docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build` — confirm all 6 containers healthy (US-10)
+- [x] T-65 Establish connection A↔B; send event from Node A; open Node B UI → "Fetch full event" resolves without "load failed" and returns triples (US-10)
 
 ### Commit
 - [x] T-66 Commit: `feat: cloudflare tunnel — public HTTPS API, auth on POST+GET /events`; open PR `feature/cloudflare-tunnel → main`
