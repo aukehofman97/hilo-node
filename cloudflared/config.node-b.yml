@@ -11,7 +11,7 @@
 #
 # Run: docker-compose -p node-b --env-file .env.node-b up --build
 
-tunnel: <TUNNEL-ID-NODE-B>
+tunnel: 42e81f13-48da-4992-adb4-3db06d73c1c4
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
