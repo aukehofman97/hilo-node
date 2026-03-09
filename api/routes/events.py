@@ -15,7 +15,7 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 
 @router.post("", status_code=201, response_model=EventResponse)
-def create_event(event: EventCreate):
+def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
     # Server stamps source_node — callers do not assert their own identity
     stored = graphdb.store_event(event)
 
@@ -42,6 +42,7 @@ def list_events(
     since: Optional[str] = Query(default=None),
     event_type: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
+    _token: dict = Depends(require_jwt),
 ):
     return graphdb.get_events(since=since, event_type=event_type, limit=limit)
 
