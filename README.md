@@ -75,9 +75,11 @@ The GraphDB repository is created automatically on first boot.
 ### Send a test event
 
 ```bash
-# V2: source_node is stamped server-side; subject is required (primary RDF subject URI)
+# source_node is stamped server-side; subject is required (primary RDF subject URI)
+# Authorization header required — default internal key is "dev"
 curl -X POST http://localhost:8000/events \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer dev" \
   -d '{
     "event_type": "shipment_created",
     "subject": "https://example.org/shipment/1",
@@ -115,6 +117,87 @@ docker-compose -p node-b --env-file .env.node-b up --build
 | B | :3001 | :9000 | :7201 |
 
 The `-p node-b` flag gives Node B its own isolated Docker network and volume. No port conflicts, no shared state.
+
+---
+
+## Cloudflare Tunnel setup
+
+Cloudflare Tunnel gives each node's API a real public HTTPS subdomain
+(`node-a.hilosemantics.com`, `node-b.hilosemantics.com`). This fixes the
+`data_url` browser fetch problem — event data URLs resolve correctly in both
+peer containers and browsers without any proxy code.
+
+The UI stays on localhost and is **not** exposed publicly in this configuration.
+
+### Prerequisites
+
+- A Cloudflare account with the `hilosemantics.com` domain (or your own domain)
+- Docker and Docker Compose
+
+### One-time setup per node
+
+**Node A:**
+
+1. Log in to the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com) → Networks → Tunnels → Create a tunnel
+2. Name it `hilo-node-a` → select Docker as the connector → **skip** the Docker run command shown
+3. Download the credentials JSON file from the tunnel detail page
+4. Place it at `cloudflared/credentials.node-a.json` (this file is git-ignored — never committed)
+5. Copy the tunnel ID (UUID shown in the dashboard) and set it in `cloudflared/config.node-a.yml`:
+   ```yaml
+   tunnel: <paste-tunnel-id-here>
+   ```
+6. In the tunnel detail page → Public Hostnames → Add a hostname:
+   - Subdomain: `node-a`, Domain: `hilosemantics.com`
+   - Service type: `HTTP`, URL: `api:8000`
+7. (Optional) Add a rate limiting rule in Cloudflare dashboard: 100 requests / minute / IP on `node-a.hilosemantics.com`
+
+Repeat steps 1–7 for Node B using `hilo-node-b`, `credentials.node-b.json`, `config.node-b.yml`, and subdomain `node-b`.
+
+> The `cloudflared/credentials.node-a.json.example` file shows the expected JSON structure.
+
+### Start a node with the tunnel
+
+The `cloudflared` service uses a [Docker Compose profile](https://docs.docker.com/compose/how-tos/profiles/) so the stack starts cleanly without credentials for local development.
+
+```bash
+# Node A — with Cloudflare Tunnel
+docker-compose --env-file .env.node-a --profile tunnel up --build
+
+# Node B — with Cloudflare Tunnel
+docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build
+```
+
+**`--env-file` is required** for correct public URL operation. Without it, `NODE_BASE_URL` falls back to `http://localhost:8000` and `data_url` values will not resolve publicly.
+
+Without `--profile tunnel`, the stack starts normally (5 containers) — useful for local development before Cloudflare credentials are in place.
+
+### Auth on public endpoints
+
+Once the API is reachable publicly, `POST /events` and `GET /events` require the internal Bearer key:
+
+```bash
+# POST /events — internal key required
+curl -X POST https://node-a.hilosemantics.com/events \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer dev" \
+  -d '{
+    "event_type": "shipment_created",
+    "subject": "https://example.org/shipment/1",
+    "triples": "@prefix schema: <https://schema.org/> .\n<https://example.org/shipment/1> schema:name \"Shipment 1\" ."
+  }'
+
+# GET /events — internal key required
+curl https://node-a.hilosemantics.com/events \
+  -H "Authorization: Bearer dev"
+```
+
+The `INTERNAL_KEY` defaults to `"dev"`. Override it in `.env.node-a` for production:
+
+```
+INTERNAL_KEY=your-secret-key-here
+```
+
+The UI sets `VITE_INTERNAL_KEY` (defaults to `"dev"`) and sends it automatically — the Events Monitor continues to work without any manual steps.
 
 ---
 
