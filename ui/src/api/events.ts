@@ -23,8 +23,10 @@ export async function fetchEvents(params: FetchEventsParams | number = {}): Prom
   if (p.limit) qs.set("limit", String(p.limit));
   if (p.since) qs.set("since", p.since);
   if (p.event_type) qs.set("event_type", p.event_type);
+  // GET /events now requires the internal key (added in cloudflare-tunnel branch)
+  const internalKey = import.meta.env.VITE_INTERNAL_KEY || "dev";
   const resp = await fetch(`${API_URL}/events?${qs}`, {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", Authorization: `Bearer ${internalKey}` },
   });
   if (!resp.ok) throw new Error(`fetchEvents failed (${resp.status})`);
   return resp.json();
