@@ -176,6 +176,7 @@ services:
       - "${UI_PORT:-3000}:3000"
     environment:
       VITE_API_URL: http://localhost:${API_PORT:-8000}
+      VITE_INTERNAL_KEY: ${INTERNAL_KEY:-dev}
     networks:
       - hilo-net
     depends_on:
