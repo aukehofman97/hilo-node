@@ -1,4 +1,4 @@
-"""Tests for event endpoints including JWT auth on GET /events/{id}."""
+"""Tests for event endpoints including JWT auth on POST /events, GET /events, GET /events/{id}."""
 from datetime import datetime
 from unittest.mock import patch
 
@@ -41,12 +41,29 @@ def _restore_jwt():
     app.dependency_overrides.pop(require_jwt, None)
 
 
-# ── GET /events (list) — no auth required ─────────────────────────────────────
+# ── GET /events (list) — requires internal key ────────────────────────────────
+
+AUTH = {"Authorization": "Bearer dev"}
+
+
+def test_list_events_no_auth_returns_401():
+    """GET /events without Authorization header returns 401."""
+    _restore_jwt()
+    response = client.get("/events")
+    assert response.status_code == 401
+
+
+def test_list_events_invalid_token_returns_401():
+    """GET /events with garbage token returns 401."""
+    _restore_jwt()
+    response = client.get("/events", headers={"Authorization": "Bearer not-a-real-token"})
+    assert response.status_code == 401
+
 
 def test_list_events_default():
-    """Returns all events with default limit."""
+    """Returns all events with default limit when auth is valid."""
     with patch("services.graphdb.get_events", return_value=MOCK_EVENTS):
-        response = client.get("/events")
+        response = client.get("/events", headers=AUTH)
     assert response.status_code == 200
     assert len(response.json()) == 3
 
@@ -54,7 +71,7 @@ def test_list_events_default():
 def test_list_events_limit():
     """Passes limit to service layer."""
     with patch("services.graphdb.get_events", return_value=MOCK_EVENTS[:1]) as mock:
-        response = client.get("/events?limit=1")
+        response = client.get("/events?limit=1", headers=AUTH)
     assert response.status_code == 200
     mock.assert_called_once_with(since=None, event_type=None, limit=1)
 
@@ -63,7 +80,7 @@ def test_list_events_event_type_filter():
     """Passes event_type to service layer."""
     filtered = [e for e in MOCK_EVENTS if e.event_type == "order_created"]
     with patch("services.graphdb.get_events", return_value=filtered) as mock:
-        response = client.get("/events?event_type=order_created")
+        response = client.get("/events?event_type=order_created", headers=AUTH)
     assert response.status_code == 200
     mock.assert_called_once_with(since=None, event_type="order_created", limit=50)
     data = response.json()
@@ -73,17 +90,17 @@ def test_list_events_event_type_filter():
 def test_list_events_limit_and_type_combined():
     """Both params passed together."""
     with patch("services.graphdb.get_events", return_value=[]) as mock:
-        response = client.get("/events?limit=10&event_type=shipment_update")
+        response = client.get("/events?limit=10&event_type=shipment_update", headers=AUTH)
     assert response.status_code == 200
     mock.assert_called_once_with(since=None, event_type="shipment_update", limit=10)
 
 
 def test_list_events_limit_out_of_range():
     """limit must be between 1 and 500."""
-    response = client.get("/events?limit=0")
+    response = client.get("/events?limit=0", headers=AUTH)
     assert response.status_code == 422
 
-    response = client.get("/events?limit=501")
+    response = client.get("/events?limit=501", headers=AUTH)
     assert response.status_code == 422
 
 
@@ -131,4 +148,62 @@ def test_get_event_by_id_success_with_auth():
         response = client.get("/events/evt-0001")
     assert response.status_code == 200
     assert response.json()["id"] == "evt-0001"
+    _restore_jwt()
+
+
+# ── POST /events — requires internal key ──────────────────────────────────────
+
+VALID_PAYLOAD = {
+    "event_type": "order_created",
+    "subject": "http://hilo.semantics.io/events/order-ORD-001",
+    "triples": (
+        "@prefix hilo: <http://hilo.semantics.io/ontology/> .\n"
+        "@prefix event: <http://hilo.semantics.io/events/> .\n"
+        "event:order-ORD-001 a hilo:Order ;\n"
+        '    hilo:orderId "ORD-001" .'
+    ),
+}
+
+
+def test_create_event_no_auth_returns_401():
+    """POST /events without Authorization header returns 401."""
+    _restore_jwt()
+    response = client.post("/events", json=VALID_PAYLOAD)
+    assert response.status_code == 401
+
+
+def test_create_event_invalid_token_returns_401():
+    """POST /events with garbage token returns 401."""
+    _restore_jwt()
+    response = client.post(
+        "/events",
+        json=VALID_PAYLOAD,
+        headers={"Authorization": "Bearer not-a-real-token"},
+    )
+    assert response.status_code == 401
+
+
+def test_create_event_with_internal_key_returns_201():
+    """POST /events with HILO_INTERNAL_KEY returns 201."""
+    _restore_jwt()
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification"),
+    ):
+        response = client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
+    assert response.status_code == 201
+    assert response.json()["id"] == "evt-0001"
+
+
+def test_create_event_bypassed_jwt_returns_201():
+    """POST /events with bypassed JWT (dependency override) returns 201."""
+    _bypass_jwt()
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification"),
+    ):
+        response = client.post("/events", json=VALID_PAYLOAD)
+    assert response.status_code == 201
     _restore_jwt()

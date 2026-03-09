@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, Field
 import uuid
 
@@ -19,6 +20,7 @@ class EventResponse(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     links: dict = Field(default_factory=dict)
     has_local_copy: bool = False
+    data_url: Optional[str] = None
 
 
 class EventImportRequest(BaseModel):
