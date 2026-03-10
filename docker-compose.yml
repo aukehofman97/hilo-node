@@ -2,20 +2,33 @@ version: "3.9"
 
 # ─── How to run ───────────────────────────────────────────────────────────────
 #
-#  Node A (local only, no tunnel):
-#    docker-compose up --build
+#  ⚠️  ALWAYS start with --profile tunnel so NODE_BASE_URL resolves correctly.
+#  Without the tunnel the public URLs (node-a/b.hilosemantics.com) won't work
+#  and peer-to-peer event delivery will fail silently.
 #
-#  Node A (with Cloudflare Tunnel — requires credentials placed first):
-#    docker-compose --env-file .env.node-a --profile tunnel up --build
+#  Node A:
+#    docker-compose --env-file .env.node-a --profile tunnel up --build -d
 #
-#  Node B (local only):
-#    docker-compose -p node-b --env-file .env.node-b up --build
+#  Node B:
+#    docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build -d
 #
-#  Node B (with Cloudflare Tunnel):
-#    docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build
+#  ── Local-only (no inter-node communication) ─────────────────────────────────
+#  Only use these if you explicitly do NOT need nodes to talk to each other:
 #
-# See .env.node-a and .env.node-b for all configurable values.
-# Tunnel setup: see cloudflared/config.node-a.yml and README.md § Cloudflare Tunnel
+#    docker-compose --env-file .env.node-a up --build -d
+#    docker-compose -p node-b --env-file .env.node-b up --build -d
+#
+#  ── Prerequisites ─────────────────────────────────────────────────────────────
+#  Cloudflare credentials must be in place before starting with --profile tunnel:
+#    cloudflared/credentials.node-a.json
+#    cloudflared/credentials.node-b.json
+#  Tunnel IDs must be set in:
+#    cloudflared/config.node-a.yml
+#    cloudflared/config.node-b.yml
+#
+#  ── URLs (with tunnel) ────────────────────────────────────────────────────────
+#  Node A  UI:  http://localhost:3000   API: https://node-a.hilosemantics.com
+#  Node B  UI:  http://localhost:3002   API: https://node-b.hilosemantics.com
 # ──────────────────────────────────────────────────────────────────────────────
 
 networks:
