@@ -72,9 +72,8 @@ def store_event(event: EventCreate) -> EventResponse:
     hilo:triplesPayload "{triples_escaped}" .
 """
 
-    combined_turtle = meta_turtle + "\n" + event.triples
-
-    insert_turtle(combined_turtle)
+    insert_turtle(meta_turtle)
+    insert_turtle(event.triples)
 
     return EventResponse(
         id=event_id,
