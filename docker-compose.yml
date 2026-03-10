@@ -2,13 +2,20 @@ version: "3.9"
 
 # ─── How to run ───────────────────────────────────────────────────────────────
 #
-#  Node A (default):
+#  Node A (local only, no tunnel):
 #    docker-compose up --build
 #
-#  Node B (V2 — second node on same machine):
+#  Node A (with Cloudflare Tunnel — requires credentials placed first):
+#    docker-compose --env-file .env.node-a --profile tunnel up --build
+#
+#  Node B (local only):
 #    docker-compose -p node-b --env-file .env.node-b up --build
 #
+#  Node B (with Cloudflare Tunnel):
+#    docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build
+#
 # See .env.node-a and .env.node-b for all configurable values.
+# Tunnel setup: see cloudflared/config.node-a.yml and README.md § Cloudflare Tunnel
 # ──────────────────────────────────────────────────────────────────────────────
 
 networks:
@@ -87,6 +94,7 @@ services:
       HILO_GRAPHDB_URL: http://graphdb:7200
       HILO_GRAPHDB_REPOSITORY: ${GRAPHDB_REPO:-hilo}
       HILO_RABBITMQ_URL: amqp://hilo:hilo@queue:5672/
+      HILO_RABBITMQ_MANAGEMENT_URL: http://queue:15672
       HILO_NODE_ID: ${NODE_ID:-node-a}
       HILO_NODE_NAME: ${NODE_NAME:-HILO Node}
       HILO_NODE_BASE_URL: ${NODE_BASE_URL:-http://localhost:8000}
@@ -130,6 +138,35 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Cloudflare Tunnel ────────────────────────────────────────────────────────
+  # Exposes the API publicly via https://<NODE_ID>.hilosemantics.com
+  #
+  # Start with tunnel enabled:
+  #   docker-compose --env-file .env.node-a --profile tunnel up --build
+  #
+  # Prerequisites (one-time per node):
+  #   1. Create tunnel in Cloudflare Zero Trust dashboard → copy tunnel ID
+  #   2. Place credentials JSON at cloudflared/credentials.node-a.json (git-ignored)
+  #   3. Set tunnel ID in cloudflared/config.node-a.yml
+  #
+  # Without --profile tunnel the service is skipped — stack starts normally for
+  # local development without Cloudflare credentials.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: hilo-${NODE_ID:-node-a}-cloudflared
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.${NODE_ID:-node-a}.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/credentials.${NODE_ID:-node-a}.json:/etc/cloudflared/credentials.json:ro
+    networks:
+      - hilo-net
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - tunnel
+
   # ── React UI ──────────────────────────────────────────────────────────────────
   ui:
     build:
@@ -138,7 +175,8 @@ services:
     ports:
       - "${UI_PORT:-3000}:3000"
     environment:
-      REACT_APP_API_URL: http://localhost:${API_PORT:-8000}
+      VITE_API_URL: http://localhost:${API_PORT:-8000}
+      VITE_INTERNAL_KEY: ${INTERNAL_KEY:-dev}
     networks:
       - hilo-net
     depends_on:

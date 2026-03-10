@@ -43,16 +43,24 @@ mkdir -p api/data
 Docker reads them from `docker-compose.yml` + `.env.node-a` / `.env.node-b`.
 Locally you set them in your shell or a `.env` file loaded manually.
 
-Minimum set to run the API locally:
+Minimum set to run the API locally (with Fuseki — the local default):
 ```bash
-export HILO_GRAPHDB_URL=http://localhost:7200
-export HILO_GRAPHDB_REPOSITORY=hilo
-export HILO_RABBITMQ_URL=amqp://hilo:hilo@localhost:5672/
-export HILO_NODE_ID=node-a
-export HILO_NODE_BASE_URL=http://localhost:8000
-export HILO_PRIVATE_KEY_PATH=./data/node.key
-export HILO_DB_PATH=./data/hilo.db
+cd api
+mkdir -p data   # only needed once
+
+HILO_NODE_ID=node-a \
+HILO_NODE_BASE_URL=http://localhost:8000 \
+HILO_PRIVATE_KEY_PATH=./data/node.key \
+HILO_DB_PATH=./data/hilo.db \
+HILO_GRAPHDB_BACKEND=fuseki \
+HILO_GRAPHDB_URL=http://localhost:3030 \
+HILO_GRAPHDB_REPOSITORY=hilo \
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+> **GraphDB vs Fuseki:** Docker uses Ontotext GraphDB (default backend). Locally, Fuseki is
+> simpler to run (no licence, lighter). Set `HILO_GRAPHDB_BACKEND=fuseki` to switch the SPARQL
+> dialect. Without it the API defaults to GraphDB and will show `graphdb: error` in `/health`.
 
 ### 4. Python dependencies
 

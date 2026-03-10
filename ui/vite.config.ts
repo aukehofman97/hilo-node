@@ -6,10 +6,4 @@ export default defineConfig({
   server: {
     port: 3000,
   },
-  define: {
-    // Map CRA-style env vars to Vite
-    "process.env.REACT_APP_API_URL": JSON.stringify(
-      process.env.REACT_APP_API_URL || "http://localhost:8000"
-    ),
-  },
 });

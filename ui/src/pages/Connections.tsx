@@ -15,10 +15,12 @@ import {
   Send,
   Shield,
   ShieldX,
+  Trash2,
   X,
 } from "lucide-react";
 import {
   acceptConnection,
+  disconnectFromPeer,
   fetchPeerIdentity,
   getToken,
   listConnections,
@@ -197,11 +199,13 @@ interface ConnectionCardProps {
   onAccept?: (id: string) => Promise<void>;
   onReject?: (id: string) => Promise<void>;
   onResend?: (id: string) => Promise<void>;
+  onDisconnect?: (peerNodeId: string) => Promise<void>;
 }
 
-function ConnectionCard({ conn, onAccept, onReject, onResend }: ConnectionCardProps) {
+function ConnectionCard({ conn, onAccept, onReject, onResend, onDisconnect }: ConnectionCardProps) {
   const [acting, setAct] = useState<string | null>(null);
   const [keyExpanded, setKeyExpanded] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   const handle = async (action: string, fn: () => Promise<void>) => {
     setAct(action);
@@ -286,6 +290,42 @@ function ConnectionCard({ conn, onAccept, onReject, onResend }: ConnectionCardPr
             </pre>
           )}
         </>
+      )}
+
+      {/* Disconnect — all statuses except rejected */}
+      {conn.status !== "rejected" && onDisconnect && (
+        <div className="border-t border-[var(--border)] pt-3">
+          {confirmDisconnect ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[var(--text-muted)] flex-1">
+                Remove connection with <strong>{conn.peer_name}</strong>? This cannot be undone.
+              </span>
+              <button
+                onClick={() => handle("disconnect", () => onDisconnect(conn.peer_node_id))}
+                disabled={acting !== null}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-hilo text-xs font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-60"
+              >
+                {acting === "disconnect" ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                Remove
+              </button>
+              <button
+                onClick={() => setConfirmDisconnect(false)}
+                disabled={acting !== null}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-hilo text-xs text-[var(--text-muted)] hover:text-[var(--text)] border border-[var(--border)] transition-colors disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDisconnect(true)}
+              className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-red-500 dark:hover:text-red-400 transition-colors"
+            >
+              <Trash2 size={12} />
+              Disconnect
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -425,6 +465,11 @@ export default function Connections() {
     await load();
   };
 
+  const handleDisconnect = async (peerNodeId: string) => {
+    await disconnectFromPeer(peerNodeId);
+    await load();
+  };
+
   // ── Buckets ──
 
   const active = connections.filter((c) => c.status === "active");
@@ -521,7 +566,7 @@ export default function Connections() {
           <SectionHeader icon={<Network size={15} />} title="Pending — incoming" count={pendingIn.length} />
           <div className="space-y-3">
             {pendingIn.map((c) => (
-              <ConnectionCard key={c.id} conn={c} onAccept={handleAccept} onReject={handleReject} />
+              <ConnectionCard key={c.id} conn={c} onAccept={handleAccept} onReject={handleReject} onDisconnect={handleDisconnect} />
             ))}
           </div>
         </div>
@@ -536,7 +581,7 @@ export default function Connections() {
           </p>
           <div className="space-y-3">
             {acceptPending.map((c) => (
-              <ConnectionCard key={c.id} conn={c} onResend={handleResend} />
+              <ConnectionCard key={c.id} conn={c} onResend={handleResend} onDisconnect={handleDisconnect} />
             ))}
           </div>
         </div>
@@ -549,7 +594,7 @@ export default function Connections() {
           <p className="text-xs text-[var(--text-muted)] mb-3">Waiting for the peer to accept your request.</p>
           <div className="space-y-3">
             {pendingOut.map((c) => (
-              <ConnectionCard key={c.id} conn={c} />
+              <ConnectionCard key={c.id} conn={c} onDisconnect={handleDisconnect} />
             ))}
           </div>
         </div>
@@ -567,7 +612,7 @@ export default function Connections() {
         ) : (
           <div className="space-y-3">
             {active.map((c) => (
-              <ConnectionCard key={c.id} conn={c} />
+              <ConnectionCard key={c.id} conn={c} onDisconnect={handleDisconnect} />
             ))}
           </div>
         )}

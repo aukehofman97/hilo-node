@@ -86,10 +86,10 @@ function GraphPreview({ onNavigate }: { onNavigate: (page: string) => void }) {
     try {
       setError(null);
       const [spo, countRes, entityRes] = await Promise.all([
-        runSparqlQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 30"),
-        runSparqlQuery("SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }"),
+        runSparqlQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o FILTER(STRSTARTS(STR(?s), \"http://hilo.semantics.io/\")) } LIMIT 30"),
+        runSparqlQuery("SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o FILTER(STRSTARTS(STR(?s), \"http://hilo.semantics.io/\")) }"),
         runSparqlQuery(
-          "SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { ?s a ?type }"
+          "SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { ?s a ?type FILTER(STRSTARTS(STR(?s), \"http://hilo.semantics.io/\")) }"
         ),
       ]);
 

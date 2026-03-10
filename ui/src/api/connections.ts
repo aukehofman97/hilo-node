@@ -1,6 +1,6 @@
 import { Connection, NodeIdentity, TokenResponse } from "../types";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +114,19 @@ export async function resendAcceptance(connectionId: string): Promise<Connection
     throw new Error(body.detail || `Resend failed (${resp.status})`);
   }
   return resp.json();
+}
+
+// ── Disconnect ────────────────────────────────────────────────────────────────
+
+export async function disconnectFromPeer(peerNodeId: string): Promise<void> {
+  const resp = await fetch(`${API_URL}/connections/${peerNodeId}/disconnect`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.detail || `Disconnect failed (${resp.status})`);
+  }
 }
 
 // ── Token ─────────────────────────────────────────────────────────────────────

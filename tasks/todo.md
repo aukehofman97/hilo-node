@@ -482,3 +482,134 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 
 ### Commit PR 3
 - [ ] T-39 Commit: `feat: node-b setup and E2E inter-node event exchange verified`; open PR `feature/node-b-setup → develop → main` (US-12, US-13)
+
+---
+
+## feature/local-event-import
+
+**Branch:** `feature/local-event-import` off `main`
+**User stories:** US-14, US-15, US-16
+**Architecture ref:** `tasks/architecture-local-import.md`
+
+### Branch setup
+- [x] T-40 `git checkout main && git pull && git checkout -b feature/local-event-import` (US-14)
+
+### Backend — models (US-15, US-16)
+- [x] T-41 Update `api/models/events.py`:
+  - Add `EventImportRequest(BaseModel)` with `triples: str`
+  - Add `has_local_copy: bool = False` field to `EventResponse` (US-15, US-16)
+
+### Backend — service (US-15, US-16)
+- [x] T-42 Update `api/services/graphdb.py`:
+  - Add `import_event_triples(event_id: str, triples: str) -> None`: (1) `insert_turtle(triples)` first, (2) SPARQL INSERT to add `hilo:triplesPayload "{escaped}"` to the existing event subject (triples first — write order is critical per architecture)
+  - Update `get_events()` SPARQL: add `OPTIONAL { ?event hilo:triplesPayload ?tp . } BIND(BOUND(?tp) AS ?hasLocalCopy)`, set `has_local_copy = binding["hasLocalCopy"]["value"] == "true"` in each `EventResponse`
+  - Update `get_event_by_id()` SPARQL: `has_local_copy = bool(b.get("triplesPayload", {}).get("value"))` (US-15, US-16)
+
+### Backend — route (US-15)
+- [x] T-43 Add `POST /events/{event_id}/import` to `api/routes/events.py`:
+  - Requires `Depends(require_jwt)` + `token_payload["sub"] == "internal"` check (C2 — local UI only)
+  - Check sequence: 404 (not found) → 400 (no hilo:dataUrl) → 409 (already imported) → `graphdb.import_event_triples()` → `{"status": "imported", "id": event_id}` (US-15)
+
+### Frontend — API client (US-15)
+- [x] T-44 Update `ui/src/api/events.ts`:
+  - Added `has_local_copy?: boolean` to the `Event` interface
+  - Added `importEvent(id, triples)` — `POST /events/{id}/import` with `Bearer dev` header (US-15)
+
+### Frontend — UI (US-14, US-15, US-16)
+- [x] T-45 Update `ui/src/pages/Events.tsx`:
+  - Split `remoteError` → `fetchError` + `storeError` (C1 from plan review)
+  - Added `storing: boolean` state; reset `fetchError` + `storeError` on `selectedId` change
+  - Added `handleStoreLocally()`: calls `importEvent()` then `fetchEvent()` to confirm; updates `detail`
+  - "Store locally" button shown when `detail.triples` non-empty AND `!detail.has_local_copy`
+  - Added `"imported"` to `EventStatus`; green badge styles in `STATUS_STYLES` and `STATUS_DOT`
+  - Badge derivation: `published` | `imported` | `received` everywhere (US-14, US-15, US-16)
+
+### Verify (US-14, US-15, US-16)
+- [ ] T-46 Manual E2E verification:
+  1. On Node B Events Monitor, open a `received` event → "Fetch full event from node-a" → triples appear → "Store locally" button appears
+  2. Click "Store locally" → button shows spinner → status badge changes to `imported` in both detail panel and list row
+  3. Close panel and reopen same event → badge still shows `imported`; button does not appear
+  4. `curl http://localhost:9000/events/{id}` with `Bearer dev` → `has_local_copy: true` in response
+  5. SPARQL query on Fuseki `hilo-b` dataset confirms the RDF triples are present (US-15, US-16)
+
+### Commit (US-14, US-15, US-16)
+- [ ] T-47 Commit: `feat: local import of remote event triples`; merge `feature/local-event-import → main` (US-14, US-15, US-16)
+
+---
+
+## feature/cloudflare-tunnel
+
+**Branch:** `feature/cloudflare-tunnel` off `main`
+**Architecture:** `tasks/architecture-cloudflare-tunnel.md`
+**User stories:** `tasks/user-stories-cloudflare.md`
+
+### Branch setup
+- [x] T-48 `git checkout main && git pull && git checkout -b feature/cloudflare-tunnel` (US-1)
+- [x] T-49 Push branch to remote: `git push -u origin feature/cloudflare-tunnel` (US-1)
+
+### Secrets — .gitignore (US-2)
+- [x] T-50 Add `cloudflared/credentials.*.json` to `.gitignore` (US-2)
+
+### Cloudflare config files (US-3)
+- [x] T-51 Create `cloudflared/config.node-a.yml` — tunnel ID placeholder, credentials-file path, ingress rule: `node-a.hilosemantics.com → http://api:8000`, fallback `http_status:404` (US-3)
+- [x] T-52 Create `cloudflared/config.node-b.yml` — same pattern for `node-b.hilosemantics.com → http://api:8000` (US-3)
+
+### docker-compose.yml (US-4)
+- [x] T-53 Add `cloudflared` service to `docker-compose.yml`: image `cloudflare/cloudflared:latest`, container name `hilo-${NODE_ID:-node-a}-cloudflared`, command `tunnel --config /etc/cloudflared/config.yml run`, mount `cloudflared/config.${NODE_ID:-node-a}.yml` and `cloudflared/credentials.${NODE_ID:-node-a}.json` read-only, `depends_on: api: condition: service_healthy`, `restart: unless-stopped`, network `hilo-net` (US-4)
+  - Note: service added under `profiles: [tunnel]` (opt-in) to avoid restart-loop when credentials are absent (review W1)
+
+### ENV files (US-5)
+- [x] T-54 Update `.env.node-a`: set `NODE_BASE_URL=https://node-a.hilosemantics.com` (US-5)
+- [x] T-55 Update `.env.node-b`: set `NODE_BASE_URL=https://node-b.hilosemantics.com` (US-5)
+  - Note: VITE_API_URL not changed per review C1 — UI stays on localhost
+
+### API — auth on POST /events (US-6)
+- [x] T-56 Add `Depends(require_jwt)` to `POST /events` route in `api/routes/events.py` (US-6)
+
+### API — auth on GET /events (US-7)
+- [x] T-57 Add `Depends(require_jwt)` to `GET /events` route in `api/routes/events.py` (US-7)
+
+### API — update tests after auth changes (US-6, US-7)
+- [x] T-56b Update `api/tests/test_events.py`: add `Authorization: Bearer dev` header to all `POST /events` and `GET /events` test calls; add explicit 401 test cases for both routes called without any auth header (US-6, US-7)
+  - 16 tests passing
+
+### UI — internal key on fetchEvents (US-8)
+- [x] T-58 Update `fetchEvents` in `ui/src/api/events.ts` to include `Authorization: Bearer ${internalKey}` header, using `import.meta.env.VITE_INTERNAL_KEY || "dev"` (US-8)
+
+### README (US-9)
+- [x] T-59 Add "Cloudflare Tunnel setup" section to `README.md` covering: create tunnel in dashboard, download credentials JSON, place at `cloudflared/credentials.node-a.json`, set tunnel ID in config file, add public hostname in dashboard, note that `--env-file` is required, note credentials are git-ignored (US-9)
+
+### Verify (US-10)
+- [x] T-60 Start Node A: `docker-compose --env-file .env.node-a --profile tunnel up --build` — confirm all 6 containers healthy including cloudflared (US-10)
+  - Prereq: credentials.node-a.json placed, tunnel ID set in config.node-a.yml, public hostname configured in Cloudflare dashboard
+- [x] T-61 `POST /events` with `Bearer dev` → `data_url` in response equals `https://node-a.hilosemantics.com/events/{id}` (US-10)
+- [x] T-62 `POST /events` without auth → `401` (US-10)
+- [x] T-63 `GET /events` without auth → `401` (US-10)
+- [x] T-64 Start Node B: `docker-compose -p node-b --env-file .env.node-b --profile tunnel up --build` — confirm all 6 containers healthy (US-10)
+- [x] T-65 Establish connection A↔B; send event from Node A; open Node B UI → "Fetch full event" resolves without "load failed" and returns triples (US-10)
+
+### Commit
+- [x] T-66 Commit: `feat: cloudflare tunnel — public HTTPS API, auth on POST+GET /events`; open PR `feature/cloudflare-tunnel → main`
+
+---
+
+## Sentry Production Logging (feature/api-sentry-logging)
+
+### api/main.py
+- [ ] T-S1 Add `from config import settings` to top-level imports (US-S1)
+- [ ] T-S2 Add `sentry_sdk.set_tag("node_id", settings.node_id)` after `sentry_sdk.init()` (US-S1)
+- [ ] T-S10 Remove the `/sentry-debug` route handler (US-S6)
+- [ ] T-S11 Verify no test or doc references `/sentry-debug` (US-S6)
+
+### api/routes/events.py
+- [ ] T-S3 Add `import sentry_sdk` to top-level imports (US-S2)
+- [ ] T-S4 Add `sentry_sdk.capture_exception(exc)` in the queue publish except block (US-S2)
+- [ ] T-S5 Add `logger.info("Event created: %s type=%s", stored.id, stored.event_type)` after store (US-S3)
+
+### api/routes/data.py
+- [ ] T-S6 Add `import logging` and `logger = logging.getLogger(__name__)` (US-S4)
+- [ ] T-S7 Add `logger.error("GraphDB error: %s", exc)` in both except blocks before raising HTTPException (US-S4)
+
+### api/routes/connections.py
+- [ ] T-S8 Add `logger.info("Connection accepted: %s peer=%s", connection_id, updated.peer_node_id)` in `accept_connection` (US-S5)
+- [ ] T-S9 Add `logger.info("Connection rejected: %s", connection_id)` in `reject_connection` (US-S5)

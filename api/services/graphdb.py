@@ -136,15 +136,19 @@ def insert_turtle(triples: str) -> None:
     else:
         # GraphDB: SPARQL UPDATE with prefixes converted to SPARQL PREFIX syntax
         endpoint = _sparql_update_endpoint()
-        sparql_prefixes, body_lines = [], []
+        seen_prefixes: dict[str, str] = {}
+        body_lines = []
         for line in triples.splitlines():
             stripped = line.strip()
             if stripped.startswith("@prefix"):
                 # @prefix foo: <...> .  →  PREFIX foo: <...>
-                sparql_prefixes.append("PREFIX" + stripped[7:].rstrip(" ."))
+                sparql_prefix = "PREFIX" + stripped[7:].rstrip(" .")
+                parts = sparql_prefix.split()
+                prefix_name = parts[1] if len(parts) > 1 else sparql_prefix
+                seen_prefixes[prefix_name] = sparql_prefix
             else:
                 body_lines.append(line)
-        insert_query = "\n".join(sparql_prefixes) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}}"
+        insert_query = "\n".join(seen_prefixes.values()) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}"
         try:
             resp = httpx.post(
                 endpoint,
@@ -156,6 +160,22 @@ def insert_turtle(triples: str) -> None:
         except httpx.HTTPStatusError as exc:
             logger.error("GraphDB INSERT failed: %s — %s", exc.response.status_code, exc.response.text)
             raise
+
+
+def _sparql_update(sparql: str) -> None:
+    """Execute a SPARQL UPDATE against the configured triple store."""
+    endpoint = _sparql_update_endpoint()
+    try:
+        resp = httpx.post(
+            endpoint,
+            data={"update": sparql},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.error("SPARQL UPDATE failed: %s — %s", exc.response.status_code, exc.response.text)
+        raise
 
 
 def query_data(sparql: str) -> dict:
@@ -188,13 +208,15 @@ def get_events(
 
     sparql = f"""
 {PREFIXES}
-SELECT ?eventId ?sourceNode ?eventType ?subject ?createdAt WHERE {{
+SELECT ?eventId ?sourceNode ?eventType ?subject ?createdAt ?hasLocalCopy WHERE {{
     ?event a hilo:Event ;
            hilo:eventId ?eventId ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
     OPTIONAL {{ ?event hilo:subject ?subject . }}
+    OPTIONAL {{ ?event hilo:triplesPayload ?tp . }}
+    BIND(BOUND(?tp) AS ?hasLocalCopy)
     {filter_block}
 }}
 ORDER BY DESC(?createdAt)
@@ -214,6 +236,7 @@ LIMIT {limit}
                     binding["createdAt"]["value"].replace("Z", "+00:00")
                 ),
                 links={"self": f"/events/{binding['eventId']['value']}"},
+                has_local_copy=binding.get("hasLocalCopy", {}).get("value", "false") == "true",
             )
         )
     return events
@@ -222,13 +245,14 @@ LIMIT {limit}
 def get_event_by_id(event_id: str) -> EventResponse | None:
     sparql = f"""
 {PREFIXES}
-SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
+SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload ?dataUrl WHERE {{
     <http://hilo.semantics.io/events/meta/{event_id}> a hilo:Event ;
            hilo:sourceNode ?sourceNode ;
            hilo:eventType ?eventType ;
            hilo:createdAt ?createdAt .
     OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:subject ?subject . }}
     OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:triplesPayload ?triplesPayload . }}
+    OPTIONAL {{ <http://hilo.semantics.io/events/meta/{event_id}> hilo:dataUrl ?dataUrl . }}
 }}
 """
     results = query_data(sparql)
@@ -236,6 +260,9 @@ SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
     if not bindings:
         return None
     b = bindings[0]
+    links: dict = {"self": f"/events/{event_id}"}
+    if data_url := b.get("dataUrl", {}).get("value"):
+        links["data"] = data_url
     return EventResponse(
         id=event_id,
         source_node=b["sourceNode"]["value"],
@@ -243,5 +270,34 @@ SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload WHERE {{
         subject=b.get("subject", {}).get("value", ""),
         triples=b.get("triplesPayload", {}).get("value", ""),
         created_at=datetime.fromisoformat(b["createdAt"]["value"].replace("Z", "+00:00")),
-        links={"self": f"/events/{event_id}"},
+        links=links,
+        has_local_copy=bool(b.get("triplesPayload", {}).get("value")),
     )
+
+
+def import_event_triples(event_id: str, triples: str) -> None:
+    """Import RDF triples for a peer notification into the local triple store.
+
+    Write order (critical):
+      1. insert_turtle — idempotent; safe to retry
+      2. SPARQL UPDATE metadata — only after triples confirmed stored
+    If (2) fails, event stays as 'received' and user can retry cleanly.
+    """
+    # Step 1: Insert the actual RDF triples first (idempotent on retry)
+    insert_turtle(triples)
+
+    # Step 2: Add hilo:triplesPayload to the existing event metadata subject
+    triples_escaped = (
+        triples
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+    sparql = f"""
+PREFIX hilo: <http://hilo.semantics.io/ontology/>
+INSERT DATA {{
+    <http://hilo.semantics.io/events/meta/{event_id}> hilo:triplesPayload "{triples_escaped}" .
+}}
+"""
+    _sparql_update(sparql)
