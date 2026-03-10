@@ -1,3 +1,4 @@
+import sys
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -6,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 
+_testing = "pytest" in sys.modules
+
 sentry_sdk.init(
-    dsn="https://7c8ba4f75ecc2bb6f89a4060a2447b96@o4511019058331648.ingest.de.sentry.io/4511019060822096",
+    dsn="" if _testing else "https://7c8ba4f75ecc2bb6f89a4060a2447b96@o4511019058331648.ingest.de.sentry.io/4511019060822096",
     send_default_pii=True,
     enable_logs=True,
     traces_sample_rate=1.0,
