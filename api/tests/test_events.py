@@ -207,3 +207,148 @@ def test_create_event_bypassed_jwt_returns_201():
         response = client.post("/events", json=VALID_PAYLOAD)
     assert response.status_code == 201
     _restore_jwt()
+
+
+def test_create_event_logs_info_on_success():
+    """Successful event creation emits logger.info with event_id and event_type."""
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification"),
+        patch("routes.events.logger") as mock_logger,
+    ):
+        response = client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
+    assert response.status_code == 201
+    mock_logger.info.assert_called_once_with(
+        "Event created: %s type=%s", "evt-0001", "order_created"
+    )
+
+
+def test_create_event_queue_failure_still_returns_201():
+    """Queue publish failure does not prevent a 201 response — event is still stored."""
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification", side_effect=Exception("RabbitMQ down")),
+        patch("sentry_sdk.capture_exception"),
+    ):
+        response = client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
+    assert response.status_code == 201
+
+
+def test_create_event_queue_failure_logs_error():
+    """Queue publish failure calls logger.error."""
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification", side_effect=Exception("RabbitMQ down")),
+        patch("sentry_sdk.capture_exception"),
+        patch("routes.events.logger") as mock_logger,
+    ):
+        client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
+    mock_logger.error.assert_called_once()
+    assert "Queue publish failed" in mock_logger.error.call_args[0][0]
+
+
+def test_create_event_queue_failure_captures_sentry_exception():
+    """Queue publish failure calls sentry_sdk.capture_exception with the exception."""
+    event = _make_event("order_created", 1)
+    exc = Exception("RabbitMQ down")
+    with (
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification", side_effect=exc),
+        patch("sentry_sdk.capture_exception") as mock_capture,
+    ):
+        client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
+    mock_capture.assert_called_once_with(exc)
+
+
+# ── POST /events/{id}/import ──────────────────────────────────────────────────
+
+VALID_IMPORT_PAYLOAD = {
+    "triples": "@prefix ex: <http://example.org/> .\nex:thing a ex:Thing .",
+}
+
+
+def _make_peer_event(has_local_copy: bool = False) -> EventResponse:
+    """Peer notification event — has a data URL in links."""
+    return EventResponse(
+        id="evt-0001",
+        source_node="node-b",
+        event_type="order_created",
+        subject="http://hilo.semantics.io/events/order-0001",
+        triples="",
+        created_at=datetime(2026, 3, 1, 12, 0, 0),
+        links={"self": "/events/evt-0001", "data": "http://node-b:8000/events/evt-0001"},
+        has_local_copy=has_local_copy,
+    )
+
+
+def _make_local_event() -> EventResponse:
+    """Locally-originated event — no data URL in links."""
+    return EventResponse(
+        id="evt-0001",
+        source_node="node-a",
+        event_type="order_created",
+        subject="http://hilo.semantics.io/events/order-0001",
+        triples="@prefix ex: <http://example.org/> .\nex:thing a ex:Thing .",
+        created_at=datetime(2026, 3, 1, 12, 0, 0),
+        links={"self": "/events/evt-0001"},
+        has_local_copy=True,
+    )
+
+
+def test_import_event_success():
+    """POST /events/{id}/import with internal JWT returns 200."""
+    _bypass_jwt()
+    with (
+        patch("services.graphdb.get_event_by_id", return_value=_make_peer_event()),
+        patch("services.graphdb.import_event_triples"),
+    ):
+        response = client.post("/events/evt-0001/import", json=VALID_IMPORT_PAYLOAD)
+    assert response.status_code == 200
+    assert response.json() == {"status": "imported", "id": "evt-0001"}
+    _restore_jwt()
+
+
+def test_import_event_rejects_peer_jwt_returns_403():
+    """POST /events/{id}/import with non-internal sub returns 403."""
+    app.dependency_overrides[require_jwt] = lambda: {"sub": "node-b", "iss": "node-b"}
+    with patch("services.graphdb.get_event_by_id", return_value=_make_peer_event()):
+        response = client.post("/events/evt-0001/import", json=VALID_IMPORT_PAYLOAD)
+    assert response.status_code == 403
+    _restore_jwt()
+
+
+def test_import_event_not_found_returns_404():
+    """POST /events/{id}/import returns 404 when event does not exist."""
+    _bypass_jwt()
+    with patch("services.graphdb.get_event_by_id", return_value=None):
+        response = client.post("/events/nonexistent/import", json=VALID_IMPORT_PAYLOAD)
+    assert response.status_code == 404
+    _restore_jwt()
+
+
+def test_import_event_local_event_returns_400():
+    """POST /events/{id}/import returns 400 for locally-originated events."""
+    _bypass_jwt()
+    with patch("services.graphdb.get_event_by_id", return_value=_make_local_event()):
+        response = client.post("/events/evt-0001/import", json=VALID_IMPORT_PAYLOAD)
+    assert response.status_code == 400
+    _restore_jwt()
+
+
+def test_import_event_already_imported_returns_409():
+    """POST /events/{id}/import returns 409 when triples already imported."""
+    _bypass_jwt()
+    with patch("services.graphdb.get_event_by_id", return_value=_make_peer_event(has_local_copy=True)):
+        response = client.post("/events/evt-0001/import", json=VALID_IMPORT_PAYLOAD)
+    assert response.status_code == 409
+    _restore_jwt()
+
+
+def test_import_event_no_auth_returns_401():
+    """POST /events/{id}/import without auth returns 401."""
+    _restore_jwt()
+    response = client.post("/events/evt-0001/import", json=VALID_IMPORT_PAYLOAD)
+    assert response.status_code == 401

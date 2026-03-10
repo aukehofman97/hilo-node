@@ -1,7 +1,23 @@
+import sys
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from config import settings
+
+_testing = "pytest" in sys.modules
+
+sentry_sdk.init(
+    dsn="" if _testing else "https://7c8ba4f75ecc2bb6f89a4060a2447b96@o4511019058331648.ingest.de.sentry.io/4511019060822096",
+    send_default_pii=True,
+    enable_logs=True,
+    traces_sample_rate=1.0,
+    profile_session_sample_rate=1.0,
+    profile_lifecycle="trace",
+)
+sentry_sdk.set_tag("node_id", settings.node_id)
 
 from routes import bridge, connections, data, events, health, queue_stats, well_known
 

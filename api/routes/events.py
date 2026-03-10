@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import settings
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/events", tags=["events"])
 def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
     # Server stamps source_node — callers do not assert their own identity
     stored = graphdb.store_event(event)
+    logger.info("Event created: %s type=%s", stored.id, stored.event_type)
 
     # Build lightweight notification (no triples) for the queue
     notification = EventNotification(
@@ -35,6 +37,7 @@ def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
         queue_service.publish_notification(notification)
     except Exception as exc:
         logger.error("Queue publish failed: %s", exc)
+        sentry_sdk.capture_exception(exc)
 
     return stored
 
