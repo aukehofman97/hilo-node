@@ -100,6 +100,7 @@ def accept_connection(connection_id: str):
     updated = conn_svc.accept_connection(connection_id)
     if updated is None:
         raise HTTPException(status_code=500, detail="Failed to update connection")
+    logger.info("Connection accepted: %s peer=%s", connection_id, updated.peer_node_id)
     return updated
 
 
@@ -115,6 +116,7 @@ def reject_connection(connection_id: str):
     success = conn_svc.reject_connection(connection_id)
     if not success:
         raise HTTPException(status_code=400, detail="Connection cannot be rejected")
+    logger.info("Connection rejected: %s", connection_id)
 
 
 @router.post("/accepted", response_model=ConnectionResponse)

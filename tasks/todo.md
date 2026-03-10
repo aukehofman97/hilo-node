@@ -590,3 +590,26 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 
 ### Commit
 - [x] T-66 Commit: `feat: cloudflare tunnel — public HTTPS API, auth on POST+GET /events`; open PR `feature/cloudflare-tunnel → main`
+
+---
+
+## Sentry Production Logging (feature/api-sentry-logging)
+
+### api/main.py
+- [ ] T-S1 Add `from config import settings` to top-level imports (US-S1)
+- [ ] T-S2 Add `sentry_sdk.set_tag("node_id", settings.node_id)` after `sentry_sdk.init()` (US-S1)
+- [ ] T-S10 Remove the `/sentry-debug` route handler (US-S6)
+- [ ] T-S11 Verify no test or doc references `/sentry-debug` (US-S6)
+
+### api/routes/events.py
+- [ ] T-S3 Add `import sentry_sdk` to top-level imports (US-S2)
+- [ ] T-S4 Add `sentry_sdk.capture_exception(exc)` in the queue publish except block (US-S2)
+- [ ] T-S5 Add `logger.info("Event created: %s type=%s", stored.id, stored.event_type)` after store (US-S3)
+
+### api/routes/data.py
+- [ ] T-S6 Add `import logging` and `logger = logging.getLogger(__name__)` (US-S4)
+- [ ] T-S7 Add `logger.error("GraphDB error: %s", exc)` in both except blocks before raising HTTPException (US-S4)
+
+### api/routes/connections.py
+- [ ] T-S8 Add `logger.info("Connection accepted: %s peer=%s", connection_id, updated.peer_node_id)` in `accept_connection` (US-S5)
+- [ ] T-S9 Add `logger.info("Connection rejected: %s", connection_id)` in `reject_connection` (US-S5)
