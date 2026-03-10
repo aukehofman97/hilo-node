@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import settings
@@ -37,7 +36,6 @@ def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
         queue_service.publish_notification(notification)
     except Exception as exc:
         logger.error("Queue publish failed: %s", exc)
-        sentry_sdk.capture_exception(exc)
 
     return stored
 

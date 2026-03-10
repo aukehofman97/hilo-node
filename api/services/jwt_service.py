@@ -128,7 +128,7 @@ def require_jwt(
             headers={"WWW-Authenticate": "Bearer"},
         )
     except (jwt.PyJWTError, ValueError) as exc:
-        logger.debug("JWT verification failed: %s", exc)
+        logger.warning("JWT verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
