@@ -18,10 +18,9 @@ Items that MUST be resolved before HILO Node goes into production or becomes a p
 **Why:** Current key is in git history — treat as compromised once purged.
 **Fix:** `openssl rand -hex 32`, update env files, restart API containers.
 
-### MON-1: Add Sentry (error tracking)
-**Why:** No visibility into runtime errors, uncaught exceptions, or failed requests in production.
-**Fix:** Add `sentry-sdk[fastapi]` to `api/requirements.txt`, initialise in `main.py` with DSN from env var. Add Sentry browser SDK to UI. Add `SENTRY_DSN` to docker-compose and env files.
-**Scope:** API + UI both need Sentry.
+### ~~MON-1: Add Sentry (error tracking)~~ ✅ Done (2026-03-10)
+**Resolved:** `sentry-sdk==2.54.0` installed, initialised in `main.py` with node_id tag, `capture_exception` on swallowed errors, structured logging across all routes, Sentry disabled during test runs. Slack alert channel configured.
+**Remaining scope:** UI Sentry browser SDK not yet added.
 
 ### SEC-1: Missing request size limits
 **Why:** FastAPI accepts unlimited payload sizes — a large `triples` POST can exhaust memory.
@@ -149,4 +148,4 @@ Items that MUST be resolved before HILO Node goes into production or becomes a p
 
 ---
 
-*Last updated: 2026-03-09*
+*Last updated: 2026-03-10*
