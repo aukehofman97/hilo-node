@@ -136,15 +136,19 @@ def insert_turtle(triples: str) -> None:
     else:
         # GraphDB: SPARQL UPDATE with prefixes converted to SPARQL PREFIX syntax
         endpoint = _sparql_update_endpoint()
-        sparql_prefixes, body_lines = [], []
+        seen_prefixes: dict[str, str] = {}
+        body_lines = []
         for line in triples.splitlines():
             stripped = line.strip()
             if stripped.startswith("@prefix"):
                 # @prefix foo: <...> .  →  PREFIX foo: <...>
-                sparql_prefixes.append("PREFIX" + stripped[7:].rstrip(" ."))
+                sparql_prefix = "PREFIX" + stripped[7:].rstrip(" .")
+                parts = sparql_prefix.split()
+                prefix_name = parts[1] if len(parts) > 1 else sparql_prefix
+                seen_prefixes[prefix_name] = sparql_prefix
             else:
                 body_lines.append(line)
-        insert_query = "\n".join(sparql_prefixes) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}}"
+        insert_query = "\n".join(seen_prefixes.values()) + f"\nINSERT DATA {{\n" + "\n".join(body_lines) + "\n}"
         try:
             resp = httpx.post(
                 endpoint,
