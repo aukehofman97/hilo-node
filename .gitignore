@@ -18,8 +18,7 @@ env/
 .env
 .env.*
 !.env.example
-# node configs contain only ports/IDs — no secrets, so they are tracked
-!.env.node-*
+!.env.node.example
 
 # Node / React
 ui/node_modules/

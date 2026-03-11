@@ -25,3 +25,26 @@ export async function runSparqlQuery(sparql: string): Promise<SparqlResults> {
   }
   return resp.json();
 }
+
+export interface AskResponse {
+  sparql: string | null;
+  results: SparqlResults | null;
+  error: string | null;
+}
+
+export async function askNaturalLanguage(question: string): Promise<AskResponse> {
+  const resp = await fetch(`${API_URL}/data/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (resp.status === 501) {
+    const data = await resp.json();
+    return { sparql: null, results: null, error: data.detail ?? "Ask AI is not configured on this node" };
+  }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Ask AI failed (${resp.status}): ${text}`);
+  }
+  return resp.json();
+}
