@@ -9,6 +9,7 @@ class EventCreate(BaseModel):
     event_type: str
     subject: str  # primary RDF subject URI, e.g. "http://hilo.semantics.io/events/order-001"
     triples: str  # Turtle-formatted RDF string
+    receiver: str  # routing: "all" (broadcast) or an active peer_node_id (unicast)
 
 
 class EventResponse(BaseModel):
@@ -36,3 +37,4 @@ class EventNotification(BaseModel):
     subject: str
     created_at: datetime
     data_url: str  # "{HILO_NODE_BASE_URL}/events/{event_id}"
+    receiver: str  # routing: "all" or peer_node_id; no default — explicit error if missing

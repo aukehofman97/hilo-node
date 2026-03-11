@@ -14,8 +14,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { fetchEvents, fetchEvent, fetchRemoteEvent, importEvent, Event } from "../api/events";
-import { getToken } from "../api/connections";
+import { fetchEvents, fetchEvent, fetchRemoteEvent, importEvent, createEvent, Event } from "../api/events";
+import { getToken, listConnections } from "../api/connections";
+import { Connection } from "../types";
 import FilterChips from "../components/FilterChips";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -573,6 +574,183 @@ function RowSkeleton() {
   );
 }
 
+// ─── Post Event form ──────────────────────────────────────────────────────────
+
+interface PostEventFormProps {
+  onPosted: () => void;
+}
+
+const EMPTY_FORM = { event_type: "", subject: "", triples: "", receiver: "" };
+
+function PostEventForm({ onPosted }: PostEventFormProps) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  // Fetch connections when the form is opened
+  useEffect(() => {
+    if (!open) return;
+    listConnections()
+      .then((all) => setConnections(all.filter((c) => c.status === "active")))
+      .catch(() => setConnections([]));
+  }, [open]);
+
+  function set(field: keyof typeof form, value: string) {
+    setForm((f) => ({ ...f, [field]: value }));
+    setError(null);
+    setSuccess(false);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.receiver) { setError("Please select a receiver."); return; }
+    setSubmitting(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      await createEvent(form);
+      setSuccess(true);
+      setForm(EMPTY_FORM);
+      onPosted();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || "Failed to post event.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="glass rounded-hilo shadow-hilo border border-[var(--border)] overflow-hidden">
+      {/* Header toggle */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-hilo-purple-50/40 dark:hover:bg-hilo-purple/5 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Zap size={14} className="text-hilo-purple dark:text-hilo-purple-light" />
+          <span className="text-sm font-semibold text-[var(--text)]">Post Event</span>
+        </div>
+        <ChevronDown
+          size={14}
+          className={`text-[var(--text-muted)] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {/* Form body */}
+      {open && (
+        <form
+          onSubmit={handleSubmit}
+          className="border-t border-[var(--border)] px-4 py-4 space-y-3 animate-fade-in"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Event type */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Event type
+              </label>
+              <input
+                required
+                type="text"
+                value={form.event_type}
+                onChange={(e) => set("event_type", e.target.value)}
+                placeholder="e.g. order_created"
+                className="w-full px-3 py-2 rounded-hilo bg-[var(--surface-alt)] border border-[var(--border)] text-sm text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-hilo-purple/50 dark:focus:border-hilo-purple-light/50 transition-colors"
+              />
+            </div>
+
+            {/* Receiver */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Receiver
+              </label>
+              <select
+                required
+                value={form.receiver}
+                onChange={(e) => set("receiver", e.target.value)}
+                className="w-full px-3 py-2 rounded-hilo bg-[var(--surface-alt)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-hilo-purple/50 dark:focus:border-hilo-purple-light/50 transition-colors"
+              >
+                <option value="" disabled>Select receiver…</option>
+                <option value="all">all (broadcast)</option>
+                {connections.map((c) => (
+                  <option key={c.peer_node_id} value={c.peer_node_id}>
+                    {c.peer_name}
+                  </option>
+                ))}
+                {connections.length === 0 && (
+                  <option disabled>No active peers — only broadcast available</option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+              Subject URI
+            </label>
+            <input
+              required
+              type="text"
+              value={form.subject}
+              onChange={(e) => set("subject", e.target.value)}
+              placeholder="http://hilo.semantics.io/events/order-001"
+              className="w-full px-3 py-2 rounded-hilo bg-[var(--surface-alt)] border border-[var(--border)] text-sm text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-hilo-purple/50 dark:focus:border-hilo-purple-light/50 transition-colors"
+            />
+          </div>
+
+          {/* Triples */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+              Triples (Turtle)
+            </label>
+            <textarea
+              required
+              rows={4}
+              value={form.triples}
+              onChange={(e) => set("triples", e.target.value)}
+              placeholder={"@prefix hilo: <http://hilo.semantics.io/ontology/> .\nevent:order-001 a hilo:Order ."}
+              className="w-full px-3 py-2 rounded-hilo bg-[var(--surface-alt)] border border-[var(--border)] text-xs font-mono text-[var(--text)] placeholder-[var(--text-muted)] focus:outline-none focus:border-hilo-purple/50 dark:focus:border-hilo-purple-light/50 transition-colors resize-y"
+            />
+          </div>
+
+          {/* Error / success */}
+          {error && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-hilo bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 animate-fade-in">
+              <AlertCircle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+          {success && (
+            <p className="text-xs text-green-600 dark:text-green-400 animate-fade-in">
+              Event posted successfully.
+            </p>
+          )}
+
+          {/* Submit */}
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex items-center gap-2 px-4 py-2 rounded-hilo text-xs font-semibold bg-hilo-purple hover:bg-hilo-purple-dark text-white transition-colors disabled:opacity-60"
+            >
+              {submitting ? (
+                <><Zap size={13} className="animate-pulse" /> Posting…</>
+              ) : (
+                <><Zap size={13} /> Post event</>
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 // ─── Events page ──────────────────────────────────────────────────────────────
 
 interface EventsProps {
@@ -713,6 +891,9 @@ export default function Events({ onNavigate }: EventsProps) {
           Real-time data sharing activity · auto-refreshes every 10 s
         </p>
       </div>
+
+      {/* Post Event form */}
+      <PostEventForm onPosted={load} />
 
       {/* Filter bar */}
       <FilterBar
