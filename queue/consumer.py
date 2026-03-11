@@ -1,9 +1,11 @@
 import json
 import logging
+import sys
 import time
 
 import httpx
 import pika
+import sentry_sdk
 
 from config import settings
 
@@ -12,6 +14,14 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("hilo.consumer")
+
+_testing = "pytest" in sys.modules
+
+sentry_sdk.init(
+    dsn="" if _testing else "https://7c8ba4f75ecc2bb6f89a4060a2447b96@o4511019058331648.ingest.de.sentry.io/4511019060822096",
+    enable_logs=True,
+)
+sentry_sdk.set_tag("node_id", settings.node_id)
 
 EXCHANGE_NAME = "hilo.events"
 DLX_EXCHANGE = "hilo.events.dlx"
