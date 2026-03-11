@@ -657,13 +657,13 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 
 ### Phase 7 — Verify
 
-- [ ] T-16 `docker-compose --env-file .env.node-a up --build` — confirm api container starts, `HILO_ANTHROPIC_API_KEY` is set inside container (`docker exec` + `printenv`) (US-2)
-- [ ] T-17 `POST /data/ask` with `{ "question": "show me the latest events" }` → 200 with valid SPARQL and non-empty results (US-4)
-- [ ] T-18 `POST /data/ask` with `ANTHROPIC_API_KEY` unset → 501 with error message (US-4)
-- [ ] T-19 UI: Ask AI tab visible, typing a question and clicking "Ask" returns results in `ResultsTable` with named columns (US-5)
-- [ ] T-20 UI: expand "Generated SPARQL" → query visible; click "Copy to editor" → switches to SPARQL mode, query pasted into textarea (US-6)
-- [ ] T-21 Confirm `.env.node-a` and `.env.node-b` no longer appear in `git status` or `git ls-files` (US-1)
-- [ ] T-22 Commit: `feat: natural language data explorer + env file security cleanup`; merge `feature/nl-data-explorer → main` (all USs)
+- [x] T-16 `docker-compose --env-file .env.node-a up --build` — confirmed api container starts, `HILO_ANTHROPIC_API_KEY` exists in container (empty until key added to env file) (US-2)
+- [ ] T-17 `POST /data/ask` with `{ "question": "show me the latest events" }` → 200 with valid SPARQL and non-empty results (US-4) — requires real API key; skip for now
+- [x] T-18 `POST /data/ask` with `ANTHROPIC_API_KEY` unset → 501 `{"detail":"Ask AI is not configured on this node"}` ✓ (US-4)
+- [ ] T-19 UI: Ask AI tab visible, typing a question and clicking "Ask" returns results in `ResultsTable` with named columns (US-5) — manual UI test by operator
+- [ ] T-20 UI: expand "Generated SPARQL" → query visible; click "Copy to editor" → switches to SPARQL mode, query pasted into textarea (US-6) — manual UI test by operator
+- [x] T-21 Confirmed `.env.node-a` and `.env.node-b` no longer in `git ls-files` ✓ (US-1)
+- [x] T-22 Commit: `feat: natural language data explorer + env file security cleanup`; merge `feature/nl-data-explorer → main` (all USs)
 
 ### Phase 8 — Tests
 
