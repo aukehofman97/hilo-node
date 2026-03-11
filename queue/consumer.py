@@ -46,6 +46,7 @@ def get_connection(max_attempts: int = 10, delay: float = 3.0) -> pika.BlockingC
 
 
 def ensure_infrastructure(channel: pika.adapters.blocking_connection.BlockingChannel) -> None:
+    """Declare exchanges, dead-letter queue, and this node's durable queue. Idempotent."""
     channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type="topic", durable=True)
     channel.exchange_declare(exchange=DLX_EXCHANGE, exchange_type="fanout", durable=True)
     channel.queue_declare(queue=DLX_QUEUE, durable=True)
@@ -138,6 +139,10 @@ def process_notification(body: bytes) -> bool:
 
 
 def on_message(channel, method, properties, body):
+    """RabbitMQ message callback. Retries up to MAX_RETRIES with exponential backoff.
+
+    ACKs on success. NACKs without requeue on final failure — message goes to dead-letter queue.
+    """
     retry_count = 0
     delay = 1.0
     success = False
@@ -164,6 +169,7 @@ def on_message(channel, method, properties, body):
 
 
 def main():
+    """Entry point. Connects to RabbitMQ, sets up infrastructure, and starts blocking consume loop."""
     conn = get_connection()
     channel = conn.channel()
     ensure_infrastructure(channel)

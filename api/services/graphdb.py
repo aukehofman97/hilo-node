@@ -45,6 +45,15 @@ def check_health() -> str:
 
 
 def store_event(event: EventCreate) -> EventResponse:
+    """Persist a locally-originated event to the triple store.
+
+    Writes two separate Turtle documents:
+      1. Meta graph — event metadata (id, type, subject, timestamps, raw triples payload)
+      2. Event triples — the caller's RDF data as-is
+
+    Kept separate so user-defined prefixes cannot collide with the internal hilo: ontology prefix.
+    source_node is stamped server-side from settings.node_id — callers cannot assert their own identity.
+    """
     event_id = str(uuid.uuid4())
     created_at = datetime.utcnow()
     # source_node stamped server-side — callers do not assert their own identity
@@ -118,6 +127,15 @@ def _turtle_data_endpoint() -> str:
 
 
 def insert_turtle(triples: str) -> None:
+    """Insert a Turtle document into the triple store.
+
+    Fuseki: POST raw Turtle to the /data endpoint.
+    GraphDB: convert @prefix declarations to SPARQL PREFIX syntax and execute INSERT DATA.
+
+    Prefix deduplication: if the same prefix name appears more than once (across calls),
+    the last definition wins. Keep each Turtle document's prefixes self-consistent to avoid
+    silent overwrites — this is why store_event calls insert_turtle twice rather than combining.
+    """
     if settings.graphdb_backend == "fuseki":
         # Fuseki accepts raw Turtle via POST /dataset/data
         endpoint = _turtle_data_endpoint()
@@ -178,6 +196,7 @@ def _sparql_update(sparql: str) -> None:
 
 
 def query_data(sparql: str) -> dict:
+    """Execute a SPARQL SELECT query and return the raw JSON results binding."""
     endpoint = _sparql_endpoint()
     try:
         resp = httpx.get(
@@ -198,6 +217,11 @@ def get_events(
     event_type: str | None = None,
     limit: int = 50,
 ) -> list[EventResponse]:
+    """Query the event metadata graph. Returns lightweight EventResponse objects (no triples).
+
+    has_local_copy is derived from whether hilo:triplesPayload exists on the metadata subject —
+    True for locally-originated events and imported peer events, False for unimported notifications.
+    """
     filters = []
     if since:
         filters.append(f'FILTER(?createdAt >= "{since}"^^xsd:dateTime)')
@@ -242,6 +266,10 @@ LIMIT {limit}
 
 
 def get_event_by_id(event_id: str) -> EventResponse | None:
+    """Fetch a single event by ID. Returns full triples payload if locally stored, empty string otherwise.
+
+    Presence of hilo:dataUrl in links indicates a peer notification (not locally originated).
+    """
     sparql = f"""
 {PREFIXES}
 SELECT ?sourceNode ?eventType ?subject ?createdAt ?triplesPayload ?dataUrl WHERE {{

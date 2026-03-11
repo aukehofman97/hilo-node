@@ -13,14 +13,14 @@ class EventCreate(BaseModel):
 
 class EventResponse(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    source_node: str
+    source_node: str          # node that originated the event
     event_type: str
     subject: str
-    triples: str
+    triples: str              # empty string for peer notifications not yet imported
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    links: dict = Field(default_factory=dict)
-    has_local_copy: bool = False
-    data_url: Optional[str] = None
+    links: dict = Field(default_factory=dict)   # always contains "self"; peer notifications also have "data"
+    has_local_copy: bool = False  # True once triples are stored locally (always True for local events)
+    data_url: Optional[str] = None  # populated on create response so the UI can show the fetch URL
 
 
 class EventImportRequest(BaseModel):

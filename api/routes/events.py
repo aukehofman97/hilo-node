@@ -16,6 +16,10 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 @router.post("", status_code=201, response_model=EventResponse)
 def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
+    """Store a new event and publish a lightweight notification to the queue for peer delivery.
+
+    Queue failure is logged but does not fail the request — the event is already persisted.
+    """
     # Server stamps source_node — callers do not assert their own identity
     stored = graphdb.store_event(event)
     logger.info("Event created: %s type=%s", stored.id, stored.event_type)
@@ -47,6 +51,7 @@ def list_events(
     limit: int = Query(default=50, ge=1, le=500),
     _token: dict = Depends(require_jwt),
 ):
+    """List events ordered by creation time descending. Includes both local and peer notifications."""
     return graphdb.get_events(since=since, event_type=event_type, limit=limit)
 
 
