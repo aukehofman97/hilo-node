@@ -613,3 +613,58 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 ### api/routes/connections.py
 - [ ] T-S8 Add `logger.info("Connection accepted: %s peer=%s", connection_id, updated.peer_node_id)` in `accept_connection` (US-S5)
 - [ ] T-S9 Add `logger.info("Connection rejected: %s", connection_id)` in `reject_connection` (US-S5)
+
+---
+
+## feature/nl-data-explorer — Natural Language Data Explorer
+
+**Branch:** `feature/nl-data-explorer` off `main`
+**User stories:** `tasks/user-stories-nl-data-explorer.md`
+**Architecture:** `tasks/architecture-nl-data-explorer.md`
+
+### Phase 1 — Env file security cleanup (prerequisite, do first)
+
+- [x] T-01 Remove `!.env.node-*` line from `.gitignore` (`.env.*` already covers them) (US-1)
+- [x] T-02 Run `git rm --cached .env.node-a .env.node-b` — untrack without deleting local copies (US-1)
+- [x] T-03 Create `.env.node.example` with all variables in non-prefixed format and placeholder values (US-1)
+
+### Phase 2 — Backend: config + dependencies
+
+- [x] T-04 Add `HILO_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}` to `api` service `environment` block in `docker-compose.yml` (US-2)
+- [x] T-05 Add `anthropic_api_key: str = ""` to `api/config.py` `Settings` class (US-2)
+- [x] T-06 Add `anthropic>=0.40.0` to `api/requirements.txt` (US-2)
+
+### Phase 3 — Backend: LLM service
+
+- [x] T-07 Create `api/services/llm.py` with `translate_to_sparql(question: str) -> str`: build system prompt (static HILO schema, namespace `http://hilo.semantics.io/ontology/`, 2–3 few-shot examples), call `claude-sonnet-4-6` with `max_tokens=600` and `timeout=30s`, strip markdown fences from response (US-3)
+- [x] T-08 Add SELECT validator in `llm.py`: strip leading whitespace/comments, raise `ValueError` if query does not start with `SELECT` (case-insensitive) (US-3)
+
+### Phase 4 — Backend: API endpoint
+
+- [x] T-09 Add `AskRequest(BaseModel)` with `question: str` and `AskResponse(BaseModel)` with `sparql: str | None`, `results: dict | None`, `error: str | None` to `api/routes/data.py` (US-4)
+- [x] T-10 Add `POST /data/ask` route to `api/routes/data.py`: check `settings.anthropic_api_key` empty → 501; call `llm.translate_to_sparql()`; call `graphdb.query_data()`; catch all errors and return `AskResponse` with `error` field populated; never raise HTTP 500 (US-4)
+
+### Phase 5 — Frontend: API client
+
+- [x] T-11 Add `AskResponse` interface and `askNaturalLanguage(question: string): Promise<AskResponse>` to `ui/src/api/data.ts` — `POST /data/ask`, no auth header (US-5)
+
+### Phase 6 — Frontend: UI
+
+- [x] T-12 Add mode toggle ("SPARQL" | "Ask AI") to `DataExplorer.tsx` — pill/tab style, switches between existing SPARQL editor and new Ask AI panel; switching modes does not clear current results (US-5)
+- [x] T-13 Implement Ask AI panel in `DataExplorer.tsx`: text input with placeholder "Ask a question about your data…", "Ask" button, loading state, calls `askNaturalLanguage()`, passes results to existing `ResultsTable`; when API returns 501 show a "Not configured" notice card instead of the input (US-5, US-7)
+- [x] T-14 Add collapsible "Generated SPARQL" section below Ask AI input: collapsed by default, shows query in monospace block, "Copy to editor" button switches to SPARQL mode and sets textarea value to the generated query (US-6)
+- [x] T-15 Wire error states in Ask AI panel: reuse existing red error card component; show descriptive message per error type (LLM unavailable / non-SELECT blocked / GraphDB error); re-enable "Ask" button after error (US-7)
+
+### Phase 7 — Verify
+
+- [ ] T-16 `docker-compose --env-file .env.node-a up --build` — confirm api container starts, `HILO_ANTHROPIC_API_KEY` is set inside container (`docker exec` + `printenv`) (US-2)
+- [ ] T-17 `POST /data/ask` with `{ "question": "show me the latest events" }` → 200 with valid SPARQL and non-empty results (US-4)
+- [ ] T-18 `POST /data/ask` with `ANTHROPIC_API_KEY` unset → 501 with error message (US-4)
+- [ ] T-19 UI: Ask AI tab visible, typing a question and clicking "Ask" returns results in `ResultsTable` with named columns (US-5)
+- [ ] T-20 UI: expand "Generated SPARQL" → query visible; click "Copy to editor" → switches to SPARQL mode, query pasted into textarea (US-6)
+- [ ] T-21 Confirm `.env.node-a` and `.env.node-b` no longer appear in `git status` or `git ls-files` (US-1)
+- [ ] T-22 Commit: `feat: natural language data explorer + env file security cleanup`; merge `feature/nl-data-explorer → main` (all USs)
+
+### Phase 8 — Tests
+
+- [x] T-23 Create `api/tests/test_data_ask.py`: (1) `POST /data/ask` with `HILO_ANTHROPIC_API_KEY` not set → 501; (2) success path — mock `services.llm.translate_to_sparql` to return valid SPARQL, mock `services.graphdb.query_data` to return fixture results → 200 with `sparql` and `results` populated, `error` null; (3) LLM raises exception → 200 with `results: null` and `error` field non-empty; (4) non-SELECT SPARQL returned by LLM → 200 with `results: null` and `error` non-empty (US-4)

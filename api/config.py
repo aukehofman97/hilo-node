@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     jwt_expiry_minutes: int = 5
     jwt_audience: str = ""  # defaults to node_id at runtime if empty
     internal_key: str = "dev"
+    anthropic_api_key: str = ""
 
     model_config = SettingsConfigDict(env_prefix="HILO_")
 

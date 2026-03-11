@@ -112,6 +112,7 @@ services:
       HILO_NODE_NAME: ${NODE_NAME:-HILO Node}
       HILO_NODE_BASE_URL: ${NODE_BASE_URL:-http://localhost:8000}
       HILO_INTERNAL_KEY: ${INTERNAL_KEY:-dev}
+      HILO_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - hilo-api-data:/data
     networks:
