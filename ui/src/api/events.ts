@@ -59,6 +59,38 @@ export async function importEvent(id: string, triples: string): Promise<{ status
   return resp.json();
 }
 
+export interface CreateEventParams {
+  event_type: string;
+  subject: string;
+  triples: string;
+  receiver: string;
+}
+
+/** Post a new event to this node. Throws with a human-readable message on 422. */
+export async function createEvent(params: CreateEventParams): Promise<Event> {
+  const internalKey = import.meta.env.VITE_INTERNAL_KEY || "dev";
+  const resp = await fetch(`${API_URL}/events`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${internalKey}`,
+    },
+    body: JSON.stringify(params),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: `Create failed (${resp.status})` }));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+        ? detail[0]?.msg || "Validation error"
+        : `Create failed (${resp.status})`
+    );
+  }
+  return resp.json();
+}
+
 /** Fetch the full event from a remote node using a bearer token. */
 export async function fetchRemoteEvent(dataUrl: string, token: string): Promise<Event> {
   const resp = await fetch(dataUrl, {

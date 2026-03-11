@@ -668,3 +668,44 @@ CLAUDE.md still references `skills/` (project-level). The skills have been moved
 ### Phase 8 — Tests
 
 - [x] T-23 Create `api/tests/test_data_ask.py`: (1) `POST /data/ask` with `HILO_ANTHROPIC_API_KEY` not set → 501; (2) success path — mock `services.llm.translate_to_sparql` to return valid SPARQL, mock `services.graphdb.query_data` to return fixture results → 200 with `sparql` and `results` populated, `error` null; (3) LLM raises exception → 200 with `results: null` and `error` field non-empty; (4) non-SELECT SPARQL returned by LLM → 200 with `results: null` and `error` non-empty (US-4)
+
+---
+
+## Feature: Event Receiver Targeting
+
+**Architecture ref**: `tasks/architecture-receiver-targeting.md`
+**User stories**: `tasks/user-stories-receiver-targeting.md`
+**Branch**: `feature/receiver-targeting`
+
+### Phase 1 — Branch
+
+- [x] T-67 `git checkout main && git pull && git checkout -b feature/receiver-targeting` (US-17)
+
+### Phase 2 — Models
+
+- [x] T-68 Add `receiver: str` to `EventCreate` and `receiver: str` (no default) to `EventNotification` in `api/models/events.py` (US-17, US-18)
+
+### Phase 3 — API validation
+
+- [x] T-69 In `api/routes/events.py` `create_event`: validate `receiver` before storing — `"all"` passes; any other value must exactly match a `peer_node_id` with `status = "active"` in SQLite via `connections.get_connection_by_peer()`; raise `HTTPException(422)` if not found or not active; pass `receiver` into `EventNotification` (US-17)
+
+### Phase 4 — Consumer routing
+
+- [x] T-70 In `queue/consumer.py` `process_notification`: read `receiver` from notification body; if `"all"` forward to all active peers (existing behaviour); if a specific `peer_node_id` filter the active peer list to that one peer and log a warning if not found; always ACK regardless (US-18)
+
+### Phase 5 — Tests
+
+- [x] T-71 Update all existing fixtures in `api/tests/test_events.py` that POST an event to include `receiver="all"` so they pass after the required field is added (US-17)
+- [x] T-72 Add receiver-validation tests to `api/tests/test_events.py`: (1) missing `receiver` → 422; (2) `receiver="all"` → 201; (3) `receiver=<active peer_node_id>` → 201; (4) `receiver=<unknown string>` → 422; (5) `receiver=<inactive peer_node_id>` → 422 (US-17)
+- [x] T-73 Create `queue/tests/test_consumer.py` (new test harness — add `pytest` to `queue/requirements.txt`): mock pika channel + httpx; (1) `receiver="all"` with two mock peers → both receive forward call; (2) `receiver=<peer_node_id>` → only that peer receives forward call; (3) `receiver=<unknown peer_node_id>` → warning logged, no forward, message ACK'd; (4) `receiver="all"` with zero peers → no forward calls, message ACK'd (US-18)
+
+### Phase 6 — UI
+
+- [x] T-74 Add `receiver` dropdown to the Post Event form in `ui/src/pages/Events.tsx`: fetch `GET /connections` on form open, filter to `status="active"`, populate options as `{ value: peer_node_id, label: peer_name }` with "all (broadcast)" as the first option; include `receiver` in the POST body (US-19)
+- [x] T-75 Handle 422 in the Post Event form: show an inline error message (e.g. "Selected peer is no longer active — refresh and try again") rather than a raw validation dump (US-19)
+
+### Phase 7 — Verify & merge
+
+- [x] T-76 Run `pytest api/tests/` — all 30 passed; `pytest queue/tests/` — all 4 passed (US-17, US-18)
+- [ ] T-77 Manual smoke test: post event with `receiver="all"` → consumer forwards to all active peers; post with `receiver=<node-b peer_node_id>` → only node-b receives it (US-17, US-18, US-19)
+- [ ] T-78 Commit and merge `feature/receiver-targeting → main` (all USs)

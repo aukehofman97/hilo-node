@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 import httpx
 
@@ -43,6 +44,26 @@ def _safe(d: dict | None, *keys: str, default=None):
     return d
 
 
+def _connection_timestamps() -> dict[str, str]:
+    """Return a map of connection name → ISO 8601 connected_at string.
+
+    RabbitMQ stores connected_at as milliseconds since epoch on the connection
+    object. The consumer object only carries the connection *name*, so we fetch
+    all connections once and index them for O(1) lookup per consumer.
+    """
+    connections = _get("connections")
+    if not isinstance(connections, list):
+        return {}
+    result = {}
+    for conn in connections:
+        name = conn.get("name")
+        ms = conn.get("connected_at")
+        if name and isinstance(ms, (int, float)):
+            dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+            result[name] = dt.isoformat()
+    return result
+
+
 def get_queue_stats() -> dict:
     """Return queue depth, throughput, dead-letter count, and consumer details.
 
@@ -52,6 +73,7 @@ def get_queue_stats() -> dict:
     main = _get(f"queues/{VHOST}/{MAIN_QUEUE}")
     dlq = _get(f"queues/{VHOST}/{DLQ_NAME}")
     consumers_raw = _get(f"consumers/{VHOST}")
+    conn_timestamps = _connection_timestamps()
 
     consumers = []
     if isinstance(consumers_raw, list):
@@ -60,10 +82,11 @@ def get_queue_stats() -> dict:
             activity = c.get("activity_status", "unknown")
             status = "active" if activity == "up" else "idle"
             channel = c.get("channel_details", {})
+            conn_name = channel.get("connection_name")
             consumers.append({
                 "id": tag,
                 "status": status,
-                "connected_at": channel.get("connection_name"),
+                "connected_at": conn_timestamps.get(conn_name) if conn_name else None,
                 "messages_processed": _safe(
                     c, "stats", "deliver_get_details", "rate", default=0
                 ),

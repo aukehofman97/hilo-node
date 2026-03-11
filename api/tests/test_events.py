@@ -1,6 +1,6 @@
 """Tests for event endpoints including JWT auth on POST /events, GET /events, GET /events/{id}."""
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -162,6 +162,7 @@ VALID_PAYLOAD = {
         "event:order-ORD-001 a hilo:Order ;\n"
         '    hilo:orderId "ORD-001" .'
     ),
+    "receiver": "all",
 }
 
 
@@ -337,3 +338,71 @@ def test_import_event_no_auth_returns_401():
     _restore_jwt()
     response = client.post("/events/evt-0001/import", json=VALID_IMPORT_PAYLOAD)
     assert response.status_code == 401
+
+
+# ── POST /events — receiver validation ───────────────────────────────────────
+
+def _payload_with_receiver(receiver):
+    return {**VALID_PAYLOAD, "receiver": receiver}
+
+
+def test_create_event_missing_receiver_returns_422():
+    """POST /events without receiver field returns 422."""
+    _bypass_jwt()
+    payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "receiver"}
+    response = client.post("/events", json=payload)
+    assert response.status_code == 422
+    _restore_jwt()
+
+
+def test_create_event_unknown_receiver_returns_422():
+    """POST /events with receiver that doesn't match any connection returns 422."""
+    _bypass_jwt()
+    with patch("services.connections.get_connection_by_peer", return_value=None):
+        response = client.post("/events", json=_payload_with_receiver("node-unknown"))
+    assert response.status_code == 422
+    assert "receiver" in response.json()["detail"]
+    _restore_jwt()
+
+
+def test_create_event_inactive_receiver_returns_422():
+    """POST /events with receiver that is not active returns 422."""
+    _bypass_jwt()
+    inactive_peer = MagicMock()
+    inactive_peer.status.value = "pending_outgoing"
+    with patch("services.connections.get_connection_by_peer", return_value=inactive_peer):
+        response = client.post("/events", json=_payload_with_receiver("node-pending"))
+    assert response.status_code == 422
+    assert "receiver" in response.json()["detail"]
+    _restore_jwt()
+
+
+def test_create_event_active_receiver_returns_201():
+    """POST /events with a valid active peer_node_id as receiver returns 201."""
+    _bypass_jwt()
+    active_peer = MagicMock()
+    active_peer.status.value = "active"
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.connections.get_connection_by_peer", return_value=active_peer),
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification"),
+    ):
+        response = client.post("/events", json=_payload_with_receiver("node-b"))
+    assert response.status_code == 201
+    _restore_jwt()
+
+
+def test_create_event_receiver_all_does_not_query_db():
+    """POST /events with receiver='all' skips the DB lookup entirely."""
+    _bypass_jwt()
+    event = _make_event("order_created", 1)
+    with (
+        patch("services.connections.get_connection_by_peer") as mock_conn,
+        patch("services.graphdb.store_event", return_value=event),
+        patch("services.queue.publish_notification"),
+    ):
+        response = client.post("/events", json=_payload_with_receiver("all"))
+    assert response.status_code == 201
+    mock_conn.assert_not_called()
+    _restore_jwt()

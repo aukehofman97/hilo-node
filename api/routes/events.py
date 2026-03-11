@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import settings
 from models.events import EventCreate, EventImportRequest, EventNotification, EventResponse
-from services import graphdb, queue as queue_service
+from services import connections as connections_service, graphdb, queue as queue_service
 from services.jwt_service import require_jwt
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,15 @@ def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
 
     Queue failure is logged but does not fail the request — the event is already persisted.
     """
+    # Validate receiver before storing — fail fast
+    if event.receiver != "all":
+        peer = connections_service.get_connection_by_peer(event.receiver)
+        if peer is None or peer.status.value != "active":
+            raise HTTPException(
+                status_code=422,
+                detail="receiver must be 'all' or the peer_node_id of an active connection",
+            )
+
     # Server stamps source_node — callers do not assert their own identity
     stored = graphdb.store_event(event)
     logger.info("Event created: %s type=%s", stored.id, stored.event_type)
@@ -32,6 +41,7 @@ def create_event(event: EventCreate, _token: dict = Depends(require_jwt)):
         subject=stored.subject,
         created_at=stored.created_at,
         data_url=f"{settings.node_base_url}/events/{stored.id}",
+        receiver=event.receiver,
     )
 
     stored.data_url = notification.data_url

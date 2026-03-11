@@ -106,24 +106,39 @@ def _forward_to_peer(peer_base_url: str, notification: dict) -> bool:
 
 
 def process_notification(body: bytes) -> bool:
-    """Parse an EventNotification and forward it to all active connected peers.
+    """Parse an EventNotification and forward it to active peers based on receiver field.
 
-    Replaces the old process_event() — there are no triples in the queue message.
-    The full event stays on the source node; peers receive only the lightweight notification.
+    receiver="all"          → forward to all active peers (broadcast)
+    receiver=<peer_node_id> → forward only to that peer (unicast)
+
+    Missing receiver field raises a deserialization error (no silent default).
+    Peer offline at consume time → warning logged, message ACK'd (no dead-letter).
     """
     try:
         notification = json.loads(body)
         event_id = notification.get("event_id")
         event_type = notification.get("event_type")
-        logger.info("Processing notification: event_id=%s type=%s", event_id, event_type)
+        receiver = notification["receiver"]  # KeyError if missing — explicit error, no silent broadcast
+        logger.info("Processing notification: event_id=%s type=%s receiver=%s", event_id, event_type, receiver)
 
         peers = _get_active_peers()
-        if not peers:
-            logger.info("No active peers — notification %s consumed without forwarding", event_id)
-            return True
+
+        if receiver == "all":
+            targets = peers
+            if not targets:
+                logger.info("No active peers — notification %s consumed without forwarding", event_id)
+                return True
+        else:
+            targets = [p for p in peers if p.get("peer_node_id") == receiver]
+            if not targets:
+                logger.warning(
+                    "Targeted peer %s not found in active peers at consume time — notification %s ACK'd without forwarding",
+                    receiver, event_id,
+                )
+                return True
 
         all_ok = True
-        for peer in peers:
+        for peer in targets:
             peer_url = peer.get("peer_base_url", "")
             if not peer_url:
                 continue
@@ -133,6 +148,9 @@ def process_notification(body: bytes) -> bool:
 
         return all_ok
 
+    except KeyError:
+        logger.error("Notification missing required 'receiver' field — cannot process")
+        return False
     except Exception as exc:
         logger.error("Failed to process notification: %s", exc)
         return False
