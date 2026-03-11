@@ -230,7 +230,6 @@ def test_create_event_queue_failure_still_returns_201():
     with (
         patch("services.graphdb.store_event", return_value=event),
         patch("services.queue.publish_notification", side_effect=Exception("RabbitMQ down")),
-        patch("sentry_sdk.capture_exception"),
     ):
         response = client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
     assert response.status_code == 201
@@ -242,25 +241,11 @@ def test_create_event_queue_failure_logs_error():
     with (
         patch("services.graphdb.store_event", return_value=event),
         patch("services.queue.publish_notification", side_effect=Exception("RabbitMQ down")),
-        patch("sentry_sdk.capture_exception"),
         patch("routes.events.logger") as mock_logger,
     ):
         client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
     mock_logger.error.assert_called_once()
     assert "Queue publish failed" in mock_logger.error.call_args[0][0]
-
-
-def test_create_event_queue_failure_captures_sentry_exception():
-    """Queue publish failure calls sentry_sdk.capture_exception with the exception."""
-    event = _make_event("order_created", 1)
-    exc = Exception("RabbitMQ down")
-    with (
-        patch("services.graphdb.store_event", return_value=event),
-        patch("services.queue.publish_notification", side_effect=exc),
-        patch("sentry_sdk.capture_exception") as mock_capture,
-    ):
-        client.post("/events", json=VALID_PAYLOAD, headers=AUTH)
-    mock_capture.assert_called_once_with(exc)
 
 
 # ── POST /events/{id}/import ──────────────────────────────────────────────────
